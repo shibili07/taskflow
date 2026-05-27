@@ -25,6 +25,7 @@ describe('queryToFilters', () => {
       assignee: 'user-1',
       reporter: 'user-2',
       sprint: 'sprint-1',
+      milestone: undefined,
       type: 'Bug',
       priority: 'High',
       labels: 'backend,urgent',
@@ -32,6 +33,12 @@ describe('queryToFilters', () => {
       hasStoryPoints: false,
       hasEstimate: true,
       fixVersion: 'v1.0.0',
+      affectsVersions: undefined,
+      hasParent: undefined,
+      hasDueDate: undefined,
+      dueDatePreset: undefined,
+      hasStartDate: undefined,
+      unassigned: undefined,
     });
   });
 

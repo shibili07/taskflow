@@ -1,23 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { FiBookmark, FiChevronDown, FiEye, FiGrid, FiUser, FiX } from 'react-icons/fi';
-import type { QuickFilterValue } from './constants';
+import type { FiltersShape, QuickFilterValue } from './constants';
 
 const qfIcon = 'h-3.5 w-3.5 shrink-0';
 
 export interface SavedFilter {
   id: string;
   name: string;
-  filters: {
-    project?: string[];
-    status: string[];
-    assignee: string[];
-    reporter: string[];
-    type: string[];
-    priority: string[];
-    labels: string[];
-    storyPoints: string[];
-    hasStoryPoints?: boolean;
-  };
+  filters: Partial<FiltersShape> & Pick<FiltersShape, 'status' | 'assignee' | 'reporter' | 'type' | 'priority' | 'labels' | 'storyPoints'>;
   quickFilter: QuickFilterValue;
   jql?: string;
   viewMode?: 'list' | 'table' | 'kanban';

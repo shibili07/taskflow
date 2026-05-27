@@ -5,6 +5,7 @@ import { usePushRegistration } from './hooks/usePushRegistration';
 import { NotificationsProvider } from './contexts/NotificationsContext';
 import TaskflowAppShell, { TaskflowAuthGuard } from './components/ProtectedRoute';
 import PortalRoute from './components/PortalRoute';
+import GuestRoute from './components/GuestRoute';
 import ProjectLayout from './components/ProjectLayout';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -67,7 +68,14 @@ import TaskflowWorkspaceSettings from './pages/TaskflowWorkspaceSettings';
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/login" element={<Login />} />
+      <Route
+        path="/login"
+        element={
+          <GuestRoute allowOAuthCallback>
+            <Login />
+          </GuestRoute>
+        }
+      />
       <Route path="/auth/oauth-callback" element={<OAuthCallback />} />
       <Route path="/auth/error" element={<OAuthError />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />

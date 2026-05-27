@@ -8,7 +8,17 @@ export interface ISavedFilterFilters {
   priority: string[];
   labels: string[];
   storyPoints: string[];
+  sprint?: string[];
+  milestone?: string[];
+  fixVersion?: string[];
+  affectsVersions?: string[];
   hasStoryPoints?: boolean;
+  hasEstimate?: boolean;
+  hasParent?: boolean;
+  hasDueDate?: boolean;
+  dueDatePreset?: string;
+  hasStartDate?: boolean;
+  unassigned?: boolean;
 }
 
 export interface ISavedFilter extends Document {
@@ -32,7 +42,17 @@ const savedFilterFiltersSchema = new Schema<ISavedFilterFilters>(
     priority: { type: [String], default: [] },
     labels: { type: [String], default: [] },
     storyPoints: { type: [String], default: [] },
+    sprint: { type: [String], default: undefined },
+    milestone: { type: [String], default: undefined },
+    fixVersion: { type: [String], default: undefined },
+    affectsVersions: { type: [String], default: undefined },
     hasStoryPoints: { type: Boolean, default: undefined },
+    hasEstimate: { type: Boolean, default: undefined },
+    hasParent: { type: Boolean, default: undefined },
+    hasDueDate: { type: Boolean, default: undefined },
+    dueDatePreset: { type: String, default: undefined },
+    hasStartDate: { type: Boolean, default: undefined },
+    unassigned: { type: Boolean, default: undefined },
   },
   { _id: false }
 );

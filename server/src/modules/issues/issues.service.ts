@@ -8,10 +8,9 @@ import type { CreateIssueBody, UpdateIssueBody, ListIssuesQuery } from './issue.
 import type { PaginationOptions, PaginatedResult } from '../projects/projects.service';
 import { parseJql } from './jqlParser';
 import { notifyProjectRefresh } from '../../websocket';
-import { env } from '../../config/env';
 import * as watchersService from '../watchers/watchers.service';
-import { notifyUser, appUrl } from '../notifications/notificationDispatch.service';
 import { getClosedStatusNamesForProject, getClosedStatusNamesFromStatuses } from '../projects/statusClassification';
+import * as issueNotification from './issueNotification.service';
 
 const DEFAULT_STATUS = 'Backlog';
 
@@ -93,6 +92,27 @@ export async function create(
   });
   await issueHistoryService.recordCreated(String(doc._id), reporterId);
   if (projectId) notifyProjectRefresh(String(projectId));
+
+  if (input.assignee) {
+    const assigneeId = String(input.assignee);
+    if (assigneeId !== reporterId) {
+      issueNotification
+        .notifyIssueAssigned({
+          issue: {
+            _id: String(doc._id),
+            key: issueKey,
+            title: input.title,
+            type: input.type ?? 'Task',
+            status: input.status ?? DEFAULT_STATUS,
+            project: projectId,
+          },
+          assigneeUserId: assigneeId,
+          actorUserId: reporterId,
+        })
+        .catch((err) => console.error('[issue] assign notify on create failed:', err));
+    }
+  }
+
   return doc.toObject();
 }
 
@@ -102,14 +122,42 @@ export interface ListIssuesFilters {
   statusExclude?: string | string[];
   assignee?: string | string[];
   reporter?: string | string[];
-  sprint?: string;
+  sprint?: string | string[];
+  milestone?: string | string[];
   type?: string | string[];
   priority?: string | string[];
   labels?: string | string[];
   storyPoints?: string | string[];
   hasStoryPoints?: boolean;
   hasEstimate?: boolean;
-  fixVersion?: string;
+  fixVersion?: string | string[];
+  affectsVersions?: string | string[];
+  hasParent?: boolean;
+  hasDueDate?: boolean;
+  dueDatePreset?: 'overdue' | 'today' | 'this_week';
+  hasStartDate?: boolean;
+  unassigned?: boolean;
+}
+
+const SPRINT_BACKLOG_TOKENS = new Set(['', 'null', 'backlog', '__backlog__']);
+
+function mergeAndClause(filter: Record<string, unknown>, clause: Record<string, unknown>): void {
+  const existingAnd = filter.$and as Record<string, unknown>[] | undefined;
+  if (existingAnd) {
+    existingAnd.push(clause);
+    return;
+  }
+  const snapshot = { ...filter };
+  Object.keys(filter).forEach((k) => delete filter[k]);
+  filter.$and = [snapshot, clause];
+}
+
+function startOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function endOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
 }
 
 export async function findAll(
@@ -158,10 +206,44 @@ export async function findAll(
       },
     };
   }
-  const assigneeArr = toArr(filters.assignee);
-  if (assigneeArr.length) filter.assignee = assigneeArr.length === 1 ? assigneeArr[0] : { $in: assigneeArr };
-  if (filters.sprint !== undefined) {
-    filter.sprint = filters.sprint === '' || filters.sprint === 'null' || filters.sprint === 'backlog' ? null : filters.sprint;
+  const assigneeArr = toArr(filters.assignee).filter((id) => id !== '__unassigned__');
+  const wantsUnassigned = filters.unassigned === true || toArr(filters.assignee).includes('__unassigned__');
+  if (assigneeArr.length > 0 && wantsUnassigned) {
+    mergeAndClause(filter, {
+      $or: [
+        { assignee: assigneeArr.length === 1 ? assigneeArr[0] : { $in: assigneeArr } },
+        { assignee: null },
+        { assignee: { $exists: false } },
+      ],
+    });
+  } else if (wantsUnassigned) {
+    mergeAndClause(filter, { $or: [{ assignee: null }, { assignee: { $exists: false } }] });
+  } else if (assigneeArr.length) {
+    filter.assignee = assigneeArr.length === 1 ? assigneeArr[0] : { $in: assigneeArr };
+  }
+  const sprintArr = toArr(filters.sprint);
+  if (sprintArr.length > 0) {
+    const sprintIds = sprintArr.filter((s) => !SPRINT_BACKLOG_TOKENS.has(s));
+    const includeBacklog = sprintArr.some((s) => SPRINT_BACKLOG_TOKENS.has(s));
+    if (sprintIds.length > 0 && includeBacklog) {
+      mergeAndClause(filter, {
+        $or: [
+          { sprint: sprintIds.length === 1 ? sprintIds[0] : { $in: sprintIds } },
+          { sprint: null },
+          { sprint: { $exists: false } },
+        ],
+      });
+    } else if (includeBacklog) {
+      mergeAndClause(filter, { $or: [{ sprint: null }, { sprint: { $exists: false } }] });
+    } else if (sprintIds.length === 1) {
+      filter.sprint = sprintIds[0];
+    } else if (sprintIds.length > 1) {
+      filter.sprint = { $in: sprintIds };
+    }
+  }
+  const milestoneArr = toArr(filters.milestone);
+  if (milestoneArr.length) {
+    filter.milestone = milestoneArr.length === 1 ? milestoneArr[0] : { $in: milestoneArr };
   }
   const typeArr = toArr(filters.type);
   if (typeArr.length) filter.type = typeArr.length === 1 ? typeArr[0] : { $in: typeArr };
@@ -205,11 +287,46 @@ export async function findAll(
     Object.keys(filter).forEach((k) => delete (filter as Record<string, unknown>)[k]);
     (filter as Record<string, unknown>).$and = andClauses;
   }
-  if (filters.fixVersion !== undefined && filters.fixVersion !== '') {
-    filter.fixVersion = filters.fixVersion;
+  const fixVersionArr = toArr(filters.fixVersion);
+  if (fixVersionArr.length) {
+    filter.fixVersion = fixVersionArr.length === 1 ? fixVersionArr[0] : { $in: fixVersionArr };
+  }
+  const affectsArr = toArr(filters.affectsVersions);
+  if (affectsArr.length) filter.affectsVersions = { $in: affectsArr };
+  if (filters.hasParent === true) filter.parent = { $exists: true, $ne: null };
+  if (filters.hasParent === false) {
+    mergeAndClause(filter, { $or: [{ parent: null }, { parent: { $exists: false } }] });
+  }
+  if (filters.hasDueDate === false) {
+    mergeAndClause(filter, { $or: [{ dueDate: null }, { dueDate: { $exists: false } }] });
+  }
+  if (filters.hasDueDate === true) {
+    mergeAndClause(filter, { dueDate: { $exists: true, $ne: null } });
+  }
+  if (filters.dueDatePreset === 'overdue') {
+    mergeAndClause(filter, { dueDate: { $lt: startOfDay(new Date()), $ne: null } });
+  } else if (filters.dueDatePreset === 'today') {
+    const start = startOfDay(new Date());
+    mergeAndClause(filter, { dueDate: { $gte: start, $lte: endOfDay(new Date()) } });
+  } else if (filters.dueDatePreset === 'this_week') {
+    const now = new Date();
+    const day = now.getDay();
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - ((day + 6) % 7));
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    mergeAndClause(filter, { dueDate: { $gte: startOfDay(monday), $lte: endOfDay(sunday) } });
+  }
+  if (filters.hasStartDate === false) {
+    mergeAndClause(filter, { $or: [{ startDate: null }, { startDate: { $exists: false } }] });
+  }
+  if (filters.hasStartDate === true) {
+    mergeAndClause(filter, { startDate: { $exists: true, $ne: null } });
   }
 
-  const isBacklog = filters.sprint === '' || filters.sprint === 'null' || filters.sprint === 'backlog';
+  const isBacklog =
+    sprintArr.some((s) => SPRINT_BACKLOG_TOKENS.has(s)) &&
+    sprintArr.filter((s) => !SPRINT_BACKLOG_TOKENS.has(s)).length === 0;
   const sort: Record<string, 1 | -1> = isBacklog ? { backlogOrder: 1, createdAt: 1 } : {};
   const [data, total] = await Promise.all([
     Issue.find(filter)
@@ -294,6 +411,7 @@ export async function update(
   if (!oldDoc) return null;
 
   const updateData: Record<string, unknown> = {};
+  const unset: Record<string, 1> = {};
   if (input.title !== undefined) updateData.title = input.title;
   if (input.description !== undefined) updateData.description = input.description;
   if (input.type !== undefined) updateData.type = input.type;
@@ -313,18 +431,21 @@ export async function update(
   if (input.startDate !== undefined) {
     if (input.startDate) updateData.startDate = new Date(input.startDate);
   }
-  if (input.storyPoints !== undefined) updateData.storyPoints = input.storyPoints;
-  if (input.timeEstimateMinutes !== undefined) updateData.timeEstimateMinutes = input.timeEstimateMinutes;
+  if (input.storyPoints !== undefined) {
+    if (input.storyPoints === null) unset.storyPoints = 1;
+    else updateData.storyPoints = input.storyPoints;
+  }
+  if (input.timeEstimateMinutes !== undefined) {
+    if (input.timeEstimateMinutes === null) unset.timeEstimateMinutes = 1;
+    else updateData.timeEstimateMinutes = input.timeEstimateMinutes;
+  }
   if (input.checklist !== undefined) updateData.checklist = input.checklist;
   if (input.customFieldValues !== undefined) updateData.customFieldValues = input.customFieldValues;
 
-  const unset: Record<string, 1> = {};
   if (input.assignee !== undefined && (input.assignee === '' || input.assignee === null)) unset.assignee = 1;
   if (input.sprint === null || input.sprint === '') unset.sprint = 1;
   if (input.dueDate === null || input.dueDate === '') unset.dueDate = 1;
   if (input.startDate === null || input.startDate === '') unset.startDate = 1;
-  if (input.storyPoints === null) unset.storyPoints = 1;
-  if (input.timeEstimateMinutes === null) unset.timeEstimateMinutes = 1;
   if (input.fixVersion === null || input.fixVersion === '') unset.fixVersion = 1;
   if (input.fixVersion !== undefined && input.fixVersion !== null && input.fixVersion !== '') updateData.fixVersion = input.fixVersion;
   if (input.affectsVersions !== undefined) updateData.affectsVersions = input.affectsVersions;
@@ -412,53 +533,51 @@ export async function update(
       : String(issue.project);
     notifyProjectRefresh(projectId);
     const issueKey = issueWithKey.key ?? '?';
-    const issueUrl = `${env.appUrl}/projects/${projectId}/issues/${encodeURIComponent(issueKey)}`;
+    const notifySnapshot: issueNotification.IssueNotifySnapshot = {
+      _id: id,
+      key: issueKey,
+      title: String(issue.title ?? ''),
+      type: String(issue.type ?? 'Task'),
+      status: String(issue.status ?? ''),
+      project: issue.project as issueNotification.IssueNotifySnapshot['project'],
+      assignee: issue.assignee as issueNotification.IssueNotifySnapshot['assignee'],
+    };
 
     const assigneeChange = changes.find((c) => c.field === 'assignee');
     if (assigneeChange?.toValue) {
-      const newAssigneeId = String(assigneeChange.toValue);
-      if (newAssigneeId !== authorId) {
-        const payload = {
-          title: 'Issue assigned to you',
-          body: `${issueKey}: ${(issue.title as string) ?? ''}`,
-          url: issueUrl,
-          data: { type: 'issue_assigned', issueId: id, issueKey, projectId },
-        };
-        notifyUser({
-          userId: newAssigneeId,
-          eventKey: 'task_assigned',
-          title: payload.title,
-          body: payload.body,
-          link: issueUrl,
-          metadata: payload.data,
-        }).catch(() => {});
-      }
+      issueNotification
+        .notifyIssueAssigned({
+          issue: notifySnapshot,
+          assigneeUserId: String(assigneeChange.toValue),
+          actorUserId: authorId,
+        })
+        .catch((err) => console.error('[issue] assign notify failed:', err));
     }
 
-    // Unassignment: notify old assignee (if any) when cleared.
     if (assigneeChange && !assigneeChange.toValue && assigneeChange.fromValue) {
-      const oldAssigneeId = String(assigneeChange.fromValue);
-      if (oldAssigneeId && oldAssigneeId !== authorId) {
-        const payload = {
-          title: 'Issue unassigned from you',
-          body: `${issueKey}: ${(issue.title as string) ?? ''}`,
-          url: issueUrl,
-          data: { type: 'issue_unassigned', issueId: id, issueKey, projectId },
-        };
-        notifyUser({
-          userId: oldAssigneeId,
-          eventKey: 'task_unassigned',
-          title: payload.title,
-          body: payload.body,
-          link: issueUrl,
-          metadata: payload.data,
-        }).catch(() => {});
-      }
+      issueNotification
+        .notifyIssueUnassigned({
+          issue: notifySnapshot,
+          previousAssigneeUserId: String(assigneeChange.fromValue),
+          actorUserId: authorId,
+        })
+        .catch((err) => console.error('[issue] unassign notify failed:', err));
     }
 
-    // Notify watchers for status/field changes (in-app, not inbox)
     const statusChange2 = changes.find((c) => c.field === 'status');
     if (statusChange2?.toValue && String(statusChange2.toValue) !== String(statusChange2.fromValue)) {
+      const assignee = issue.assignee as { _id?: unknown } | null;
+      const assigneeId = assignee?._id ? String(assignee._id) : null;
+      issueNotification
+        .notifyIssueStatusChanged({
+          issue: { ...notifySnapshot, status: String(statusChange2.toValue) },
+          fromStatus: String(statusChange2.fromValue ?? '—'),
+          toStatus: String(statusChange2.toValue),
+          assigneeUserId: assigneeId,
+          actorUserId: authorId,
+        })
+        .catch((err) => console.error('[issue] status notify failed:', err));
+
       watchersService.notifyWatchers(id, authorId, {
         type: 'status_changed',
         title: `Status changed: ${issueKey}`,
@@ -480,34 +599,6 @@ export async function update(
       }).catch(() => {});
     }
 
-    const statusChange = changes.find((c) => c.field === 'status');
-    const closedStatuses = await getClosedStatusNamesForProject(projectId);
-    if (statusChange?.toValue && closedStatuses.includes(String(statusChange.toValue))) {
-      const assignee = issue.assignee as { _id?: unknown } | null;
-      const reporter = issue.reporter as { _id?: unknown } | null;
-      const assigneeId = assignee?._id ? String(assignee._id) : null;
-      const reporterId = reporter?._id ? String(reporter._id) : null;
-      const payload = {
-        title: 'Issue closed',
-        body: `${issueKey} was marked as done.`,
-        url: issueUrl,
-        data: { type: 'issue_closed', issueId: id, issueKey, projectId },
-      };
-      const notifyClosed = (userId: string) => {
-        if (userId !== authorId) {
-          notifyUser({
-            userId,
-            eventKey: 'task_status_changed',
-            title: payload.title,
-            body: payload.body,
-            link: appUrl(payload.url),
-            metadata: payload.data,
-          }).catch(() => {});
-        }
-      };
-      if (assigneeId) notifyClosed(assigneeId);
-      if (reporterId && reporterId !== assigneeId) notifyClosed(reporterId);
-    }
   }
 
   // Sync customer request status when issue status changes
@@ -584,10 +675,11 @@ export async function bulkUpdate(
   const allowedProjectIds = await ProjectMember.find({ user: userObjectId }).distinct('project');
   if (allowedProjectIds.length === 0) return { updated: 0, errors: ['Access denied'] };
 
-  const issues = await Issue.find({ _id: { $in: issueIds }, project: { $in: allowedProjectIds } })
-    .select('_id project')
+  const issuesBefore = await Issue.find({ _id: { $in: issueIds }, project: { $in: allowedProjectIds } })
+    .select('_id key title type status assignee project')
+    .populate('project', 'name key')
     .lean();
-  const accessibleIds = issues.map((i) => String(i._id));
+  const accessibleIds = issuesBefore.map((i) => String(i._id));
   const inaccessible = issueIds.filter((id) => !accessibleIds.includes(id));
   if (inaccessible.length > 0) {
     return { updated: 0, errors: [`Access denied to ${inaccessible.length} issue(s)`] };
@@ -621,8 +713,68 @@ export async function bulkUpdate(
     ? { $set: updateData, $unset: unset }
     : { $set: updateData };
 
-  const result = await Issue.updateMany({ _id: { $in: issueIds } }, updateOp);
+  const result = await Issue.updateMany({ _id: { $in: accessibleIds } }, updateOp);
   const updated = result.modifiedCount;
+
+  for (const before of issuesBefore) {
+    const issueId = String(before._id);
+    const snapshot: issueNotification.IssueNotifySnapshot = {
+      _id: issueId,
+      key: String(before.key ?? issueId),
+      title: String(before.title ?? ''),
+      type: String(before.type ?? 'Task'),
+      status:
+        updates.status !== undefined ? String(updates.status) : String(before.status ?? DEFAULT_STATUS),
+      project: before.project as issueNotification.IssueNotifySnapshot['project'],
+      assignee: before.assignee as issueNotification.IssueNotifySnapshot['assignee'],
+    };
+
+    if (updates.assignee !== undefined) {
+      const oldAssigneeId = before.assignee ? String(before.assignee) : null;
+      const newAssigneeId =
+        updates.assignee === null || updates.assignee === ''
+          ? null
+          : String(updates.assignee);
+      if (newAssigneeId && newAssigneeId !== oldAssigneeId) {
+        issueNotification
+          .notifyIssueAssigned({
+            issue: { ...snapshot, assignee: newAssigneeId },
+            assigneeUserId: newAssigneeId,
+            actorUserId: userId,
+          })
+          .catch((err) => console.error('[issue] bulk assign notify failed:', err));
+      }
+      if (oldAssigneeId && !newAssigneeId) {
+        issueNotification
+          .notifyIssueUnassigned({
+            issue: snapshot,
+            previousAssigneeUserId: oldAssigneeId,
+            actorUserId: userId,
+          })
+          .catch((err) => console.error('[issue] bulk unassign notify failed:', err));
+      }
+    }
+
+    if (updates.status !== undefined && String(before.status) !== String(updates.status)) {
+      const assigneeId =
+        updates.assignee !== undefined
+          ? updates.assignee === null || updates.assignee === ''
+            ? null
+            : String(updates.assignee)
+          : before.assignee
+            ? String(before.assignee)
+            : null;
+      issueNotification
+        .notifyIssueStatusChanged({
+          issue: snapshot,
+          fromStatus: String(before.status ?? '—'),
+          toStatus: String(updates.status),
+          assigneeUserId: assigneeId,
+          actorUserId: userId,
+        })
+        .catch((err) => console.error('[issue] bulk status notify failed:', err));
+    }
+  }
 
   for (const id of issueIds) {
     const changes: Array<{ field: string; fromValue: unknown; toValue: unknown }> = [];
@@ -639,7 +791,7 @@ export async function bulkUpdate(
     }
   }
 
-  const affectedProjectIds = [...new Set(issues.map((i) => String(i.project)))];
+  const affectedProjectIds = [...new Set(issuesBefore.map((i) => String(i.project)))];
   for (const pid of affectedProjectIds) notifyProjectRefresh(pid);
   return { updated, errors: [] };
 }
@@ -776,6 +928,17 @@ export async function searchGlobal(
   };
 }
 
+function parseOptionalBool(v: string | undefined): boolean | undefined {
+  if (v === 'true') return true;
+  if (v === 'false') return false;
+  return undefined;
+}
+
+function parseDueDatePreset(v: string | undefined): ListIssuesFilters['dueDatePreset'] {
+  if (v === 'overdue' || v === 'today' || v === 'this_week') return v;
+  return undefined;
+}
+
 export function queryToFilters(query: ListIssuesQuery): ListIssuesFilters {
   return {
     project: query.project,
@@ -784,13 +947,20 @@ export function queryToFilters(query: ListIssuesQuery): ListIssuesFilters {
     assignee: query.assignee,
     reporter: query.reporter,
     sprint: query.sprint,
+    milestone: query.milestone,
     type: query.type,
     priority: query.priority,
     labels: query.labels,
     storyPoints: query.storyPoints,
-    hasStoryPoints: query.hasStoryPoints === 'false' ? false : undefined,
+    hasStoryPoints: query.hasStoryPoints === 'true' ? true : query.hasStoryPoints === 'false' ? false : undefined,
     hasEstimate: query.hasEstimate === 'true' ? true : query.hasEstimate === 'false' ? false : undefined,
     fixVersion: query.fixVersion,
+    affectsVersions: query.affectsVersions,
+    hasParent: parseOptionalBool(query.hasParent),
+    hasDueDate: parseOptionalBool(query.hasDueDate),
+    dueDatePreset: parseDueDatePreset(query.dueDate),
+    hasStartDate: parseOptionalBool(query.hasStartDate),
+    unassigned: query.unassigned === 'true' ? true : undefined,
   };
 }
 
@@ -846,7 +1016,33 @@ export async function findByJql(opts: FindByJqlOptions): Promise<PaginatedResult
   };
 }
 
-export async function getQuickFilterCounts(userId: string, projectId?: string): Promise<{ my: number; open: number; all: number }> {
+export type LabelFacet = { label: string; count: number };
+
+export type QuickFilterCountsResult = {
+  my: number;
+  open: number;
+  all: number;
+  myOpenLabels: LabelFacet[];
+  openLabels: LabelFacet[];
+  allLabels: LabelFacet[];
+};
+
+async function aggregateIssueLabelCounts(match: Record<string, unknown>): Promise<LabelFacet[]> {
+  const rows = await Issue.aggregate<{ _id: string; count: number }>([
+    { $match: match },
+    { $unwind: '$labels' },
+    { $match: { labels: { $type: 'string', $ne: '' } } },
+    { $group: { _id: '$labels', count: { $sum: 1 } } },
+    { $sort: { count: -1, _id: 1 } },
+    { $limit: 40 },
+  ]);
+  return rows.map((r) => ({ label: String(r._id), count: r.count }));
+}
+
+async function buildQuickFilterScope(
+  userId: string,
+  projectId?: string
+): Promise<{ projectFilter: Record<string, unknown>; notClosedFilter: Record<string, unknown> } | null> {
   const userObjectId = new mongoose.Types.ObjectId(userId);
   let projectFilter: Record<string, unknown> = {};
 
@@ -854,11 +1050,10 @@ export async function getQuickFilterCounts(userId: string, projectId?: string): 
     projectFilter.project = projectId;
   } else {
     const projectIds = await ProjectMember.find({ user: userObjectId }).distinct('project');
-    if (projectIds.length === 0) return { my: 0, open: 0, all: 0 };
+    if (projectIds.length === 0) return null;
     projectFilter.project = { $in: projectIds };
   }
 
-  // Get closed statuses for the relevant projects
   let closedStatuses: string[] = [];
   if (projectId) {
     closedStatuses = await getClosedStatusNamesForProject(projectId);
@@ -884,11 +1079,26 @@ export async function getQuickFilterCounts(userId: string, projectId?: string): 
     },
   };
 
-  const [all, open, my] = await Promise.all([
+  return { projectFilter, notClosedFilter };
+}
+
+export async function getQuickFilterCounts(userId: string, projectId?: string): Promise<QuickFilterCountsResult> {
+  const scope = await buildQuickFilterScope(userId, projectId);
+  if (!scope) return { my: 0, open: 0, all: 0, myOpenLabels: [], openLabels: [], allLabels: [] };
+
+  const { projectFilter, notClosedFilter } = scope;
+
+  const openMatch = { ...projectFilter, ...notClosedFilter };
+  const myMatch = { ...openMatch, assignee: userId };
+
+  const [all, open, my, myOpenLabels, openLabels, allLabels] = await Promise.all([
     Issue.countDocuments(projectFilter),
-    Issue.countDocuments({ ...projectFilter, ...notClosedFilter }),
-    Issue.countDocuments({ ...projectFilter, ...notClosedFilter, assignee: userId })
+    Issue.countDocuments(openMatch),
+    Issue.countDocuments(myMatch),
+    aggregateIssueLabelCounts(myMatch),
+    aggregateIssueLabelCounts(openMatch),
+    aggregateIssueLabelCounts(projectFilter),
   ]);
 
-  return { my, open, all };
+  return { my, open, all, myOpenLabels, openLabels, allLabels };
 }

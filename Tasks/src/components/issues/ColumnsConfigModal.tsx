@@ -1,11 +1,11 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { ISSUE_TABLE_COLUMNS } from './constants';
+import { ISSUE_TABLE_COLUMNS, type IssuesColumnsConfig } from './constants';
 
 interface ColumnsConfigModalProps {
   columnsOpen: boolean;
   setColumnsOpen: (v: boolean) => void;
-  columnsConfig: { order: string[]; visible: Record<string, boolean> };
+  columnsConfig: IssuesColumnsConfig;
   toggleColumn: (id: string) => void;
   moveColumnAt: (dragIndex: number, dropIndex: number) => void;
   resetColumns: () => void;

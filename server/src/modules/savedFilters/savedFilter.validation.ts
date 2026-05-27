@@ -8,7 +8,17 @@ const filtersSchema = z.object({
   priority: z.array(z.string()).default([]),
   labels: z.array(z.string()).default([]),
   storyPoints: z.array(z.string()).default([]),
+  sprint: z.array(z.string()).optional(),
+  milestone: z.array(z.string()).optional(),
+  fixVersion: z.array(z.string()).optional(),
+  affectsVersions: z.array(z.string()).optional(),
   hasStoryPoints: z.boolean().optional(),
+  hasEstimate: z.boolean().optional(),
+  hasParent: z.boolean().optional(),
+  hasDueDate: z.boolean().optional(),
+  dueDatePreset: z.enum(['overdue', 'today', 'this_week']).optional(),
+  hasStartDate: z.boolean().optional(),
+  unassigned: z.boolean().optional(),
 });
 
 export const createSavedFilterSchema = z.object({

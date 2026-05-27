@@ -1067,7 +1067,7 @@ export interface Issue {
   reporter?: { _id: string; name: string; email: string };
   project?: { _id: string; name: string; key: string };
   sprint?: { _id: string; name: string; status: string };
-  parent?: { _id: string; key: string; title: string };
+  parent?: { _id: string; key: string; title: string } | string;
   milestone?: { _id: string; name: string; dueDate?: string; status: string };
   boardColumn?: string;
   labels?: string[];
@@ -1099,7 +1099,14 @@ export const issuesApi = {
   },
   getQuickFilterCounts: (token: string, projectId?: string) => {
     const q = projectId ? `?project=${projectId}` : '';
-    return api.get<{ my: number; open: number; all: number }>(`/issues/quick-filters/counts${q}`, token);
+    return api.get<{
+      my: number;
+      open: number;
+      all: number;
+      myOpenLabels: Array<{ label: string; count: number }>;
+      openLabels: Array<{ label: string; count: number }>;
+      allLabels: Array<{ label: string; count: number }>;
+    }>(`/issues/quick-filters/counts${q}`, token);
   },
   get: (id: string, token: string) => api.get<Issue>(`/issues/${id}`, token),
   getByKey: (projectId: string, key: string, token: string) =>
@@ -1255,6 +1262,7 @@ export interface Comment {
   issue: string;
   author: { _id: string; name: string; email: string };
   createdAt: string;
+  updatedAt?: string;
 }
 
 export const commentsApi = {

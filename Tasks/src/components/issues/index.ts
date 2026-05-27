@@ -5,6 +5,7 @@ export { KanbanCard } from './KanbanCard';
 export { KanbanScrollArea } from './KanbanScrollArea';
 export { KanbanDragPreview } from './KanbanDragPreview';
 export { QuickFiltersBar, type SavedFilter } from './QuickFiltersBar';
+export { QuickFilterLabelFilters, type LabelFacetCount } from './QuickFilterLabelFilters';
 export { IssuesToolbar } from './IssuesToolbar';
 export { JqlSearchPanel } from './JqlSearchPanel';
 export { BulkEditBar } from './BulkEditBar';

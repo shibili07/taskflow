@@ -22,22 +22,32 @@ import {
   type Project,
   type Sprint,
   type Milestone,
+  type ProjectVersion,
   getIssueKey,
 } from '../lib/api';
 import ConfirmModal from '../components/ConfirmModal';
 import {
   parseFiltersFromSearchParams,
   buildSearchParams,
+  parseIssuesColumnsConfig,
   ISSUE_TABLE_COLUMNS,
   DEFAULT_COLUMN_ORDER,
   DEFAULT_STATUSES,
   DEFAULT_TYPES,
   DEFAULT_PRIORITIES,
+  applyFiltersToListParams,
+  countActiveFilters,
+  hasAnyIssueFilters,
+  DEFAULT_FILTERS,
+  resolveIssueParentId,
+  filterParentCandidates,
   type QuickFilterValue,
   type ViewModeValue,
 } from '../components/issues';
 import {
   QuickFiltersBar,
+  QuickFilterLabelFilters,
+  ActiveFilterChips,
   IssuesToolbar,
   JqlSearchPanel,
   BulkEditBar,
@@ -56,7 +66,7 @@ const GLOBAL_COLUMNS_VISIBLE: Record<string, boolean> = {
 };
 
 function getGlobalColumnsConfig() {
-  return { order: [...DEFAULT_COLUMN_ORDER], visible: { ...GLOBAL_COLUMNS_VISIBLE } };
+  return parseIssuesColumnsConfig(null, GLOBAL_COLUMNS_VISIBLE);
 }
 
 export default function GlobalIssues() {
@@ -87,7 +97,14 @@ export default function GlobalIssues() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [total, setTotal] = useState(0);
-  const [totalCounts, setTotalCounts] = useState<{ my: number; open: number; all: number } | null>(null);
+  const [totalCounts, setTotalCounts] = useState<{
+    my: number;
+    open: number;
+    all: number;
+    myOpenLabels: Array<{ label: string; count: number }>;
+    openLabels: Array<{ label: string; count: number }>;
+    allLabels: Array<{ label: string; count: number }>;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<User[]>([]);
   const [modalUsers, setModalUsers] = useState<User[]>([]);
@@ -115,7 +132,9 @@ export default function GlobalIssues() {
   const [submitting, setSubmitting] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [saveFilterName, setSaveFilterName] = useState('');
-  const [openFilterDropdown, setOpenFilterDropdown] = useState<'status' | 'type' | 'priority' | 'assignee' | 'reporter' | 'labels' | 'storyPoints' | 'project' | null>(null);
+  const [openFilterDropdown, setOpenFilterDropdown] = useState<
+    'status' | 'type' | 'priority' | 'assignee' | 'reporter' | 'labels' | 'storyPoints' | 'project' | 'sprint' | 'milestone' | 'fixVersion' | 'affectsVersions' | 'dueDate' | null
+  >(null);
   const [confirmDeleteIssue, setConfirmDeleteIssue] = useState<Issue | null>(null);
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [columnDragId, setColumnDragId] = useState<string | null>(null);
@@ -139,17 +158,11 @@ export default function GlobalIssues() {
   const [watchingLoadingId, setWatchingLoadingId] = useState<string | null>(null);
 
   const COLUMNS_CONFIG_KEY = 'taskflow-issues-columns-global';
-  const [columnsConfig, setColumnsConfig] = useState<{ order: string[]; visible: Record<string, boolean> }>(() => {
+  const [columnsConfig, setColumnsConfig] = useState(() => {
     try {
       const raw = localStorage.getItem(COLUMNS_CONFIG_KEY);
       if (raw) {
-        const parsed = JSON.parse(raw) as { order: string[]; visible: Record<string, boolean> };
-        const order = parsed.order?.length ? parsed.order : DEFAULT_COLUMN_ORDER;
-        const visible: Record<string, boolean> = { ...GLOBAL_COLUMNS_VISIBLE };
-        ISSUE_TABLE_COLUMNS.forEach((c) => {
-          if (parsed.visible && c.id in parsed.visible) visible[c.id] = Boolean(parsed.visible[c.id]);
-        });
-        return { order, visible };
+        return parseIssuesColumnsConfig(JSON.parse(raw) as Parameters<typeof parseIssuesColumnsConfig>[0], GLOBAL_COLUMNS_VISIBLE);
       }
     } catch {}
     return getGlobalColumnsConfig();
@@ -177,6 +190,13 @@ export default function GlobalIssues() {
   };
   const resetColumns = () => setColumnsConfig(getGlobalColumnsConfig());
 
+  const setColumnWidth = (colId: string, width: number) => {
+    setColumnsConfig((prev) => ({
+      ...prev,
+      widths: { ...prev.widths, [colId]: width },
+    }));
+  };
+
   const statusList = useMemo(() => {
     const fromProjects = [...new Set(projects.flatMap((p) => (p.statuses ?? []).map((s) => s.name)))];
     return fromProjects.length ? fromProjects : DEFAULT_STATUSES;
@@ -193,15 +213,16 @@ export default function GlobalIssues() {
   const getTypeMeta = (name: string) => projects.flatMap((p) => p.issueTypes ?? []).find((t) => t.name === name);
   const getStatusMeta = (name: string) => projects.flatMap((p) => p.statuses ?? []).find((s) => s.name === name);
 
-  const hasActiveFilters = Boolean(
-    filters.project.length || filters.status.length || filters.assignee.length || filters.reporter.length ||
-    filters.type.length || filters.priority.length || filters.labels.length ||
-    filters.storyPoints.length || filters.hasStoryPoints === false
-  );
-  const activeFilterCount =
-    filters.project.length + filters.status.length + filters.assignee.length + filters.reporter.length +
-    filters.type.length + filters.priority.length + filters.labels.length +
-    filters.storyPoints.length + (filters.hasStoryPoints === false ? 1 : 0);
+  const hasActiveFilters = hasAnyIssueFilters(filters);
+  const activeFilterCount = countActiveFilters(filters);
+  const versions = useMemo(() => {
+    const scope = filters.project.length
+      ? projects.filter((p) => filters.project.includes(p._id))
+      : projects;
+    const byId = new Map<string, ProjectVersion>();
+    scope.forEach((p) => (p.versions ?? []).forEach((v) => byId.set(v.id, v)));
+    return Array.from(byId.values());
+  }, [projects, filters.project]);
   const allLabels = useMemo(() => [...new Set(issues.flatMap((i) => i.labels || []))].sort(), [issues]);
   const limit = 25;
 
@@ -215,6 +236,13 @@ export default function GlobalIssues() {
 
   const useJql = Boolean(jql.trim());
 
+  const quickFilterLabelCounts = useMemo(() => {
+    if (!totalCounts) return [];
+    if (quickFilter === 'my') return totalCounts.myOpenLabels;
+    if (quickFilter === 'open') return totalCounts.openLabels;
+    return totalCounts.allLabels;
+  }, [totalCounts, quickFilter]);
+
   function buildListParams(p: { page: number }): Record<string, string | number> & { token: string } {
     if (useJql) {
       return { token: token!, page: p.page, limit: viewMode === 'kanban' ? 200 : 20, jql };
@@ -225,9 +253,12 @@ export default function GlobalIssues() {
       token: token!,
     };
     if (filters.project.length) params.project = filters.project.join(',');
-    if (quickFilter === 'open' || quickFilter === 'my') {
+    if ((quickFilter === 'open' || quickFilter === 'my') && !filters.status.length) {
       const closedStatusSet = new Set<string>();
-      projects.forEach((project) => {
+      const scope = filters.project.length
+        ? projects.filter((p) => filters.project.includes(p._id))
+        : projects;
+      scope.forEach((project) => {
         (project.statuses ?? []).forEach((status) => {
           if (isClosedStatus(status)) closedStatusSet.add(status.name);
         });
@@ -238,16 +269,7 @@ export default function GlobalIssues() {
       if (closedStatuses.length === 0) closedStatuses = [...LEGACY_CLOSED_STATUSES];
       params.statusExclude = closedStatuses.join(',');
     }
-    else {
-      if (filters.status.length) params.status = filters.status.join(',');
-      if (filters.assignee.length) params.assignee = filters.assignee.join(',');
-      if (filters.reporter.length) params.reporter = filters.reporter.join(',');
-      if (filters.type.length) params.type = filters.type.join(',');
-      if (filters.priority.length) params.priority = filters.priority.join(',');
-      if (filters.labels.length) params.labels = filters.labels.join(',');
-      if (filters.storyPoints.length) params.storyPoints = filters.storyPoints.join(',');
-      if (filters.hasStoryPoints === false) params.hasStoryPoints = 'false';
-    }
+    applyFiltersToListParams(params, filters);
     if (quickFilter === 'my' && user?.id) params.assignee = user.id;
     return params;
   }
@@ -269,6 +291,22 @@ export default function GlobalIssues() {
       if (res.success && res.data) setProjects(res.data.data ?? []);
     });
   }, [token]);
+
+  const filterScopeProjectId = filters.project.length === 1 ? filters.project[0] : null;
+
+  useEffect(() => {
+    if (!token || !filterScopeProjectId) {
+      setSprints([]);
+      setMilestones([]);
+      return;
+    }
+    sprintsApi.list(1, 100, filterScopeProjectId, undefined, token).then((res) => {
+      if (res.success && res.data) setSprints(res.data.data ?? []);
+    });
+    milestonesApi.list(filterScopeProjectId, token).then((res) => {
+      if (res.success && res.data) setMilestones(Array.isArray(res.data) ? res.data : []);
+    });
+  }, [token, filterScopeProjectId]);
 
   useEffect(() => {
     if (!token) return;
@@ -353,12 +391,20 @@ export default function GlobalIssues() {
           limit: 200,
         })
         .then((res) => {
-          if (res.success && res.data) setParentCandidates(res.data.data ?? []);
+          if (res.success && res.data) {
+            setParentCandidates(
+              filterParentCandidates(
+                res.data.data ?? [],
+                editIssue?._id,
+                resolveIssueParentId(editIssue?.parent)
+              )
+            );
+          }
         });
     } else {
       setParentCandidates([]);
     }
-  }, [form.project, token]);
+  }, [form.project, token, editIssue?._id, modal]);
 
   useEffect(() => {
     if (form.project && token) {
@@ -424,7 +470,7 @@ export default function GlobalIssues() {
       assignee: typeof issue.assignee === 'object' && issue.assignee ? issue.assignee._id : '',
       sprint: typeof issue.sprint === 'object' && issue.sprint ? issue.sprint._id : '',
       storyPoints: issue.storyPoints != null ? String(issue.storyPoints) : '',
-      parent: typeof issue.parent === 'object' && issue.parent ? issue.parent._id : '',
+      parent: resolveIssueParentId(issue.parent),
       milestone: typeof issue.milestone === 'object' && issue.milestone ? issue.milestone._id : '',
       customFieldValues: { ...(issue.customFieldValues ?? {}) },
       fixVersion: issue.fixVersion ?? '',
@@ -640,6 +686,29 @@ export default function GlobalIssues() {
             totalCounts={totalCounts}
           />
 
+          {!useJql && (
+            <QuickFilterLabelFilters
+              quickFilter={quickFilter}
+              labelCounts={quickFilterLabelCounts}
+              selectedLabels={filters.labels}
+              onToggleLabel={(label) => toggleFilter('labels', label)}
+              onClearLabels={() => updateUrl({ filters: { ...filters, labels: [] }, page: 1 })}
+              loading={totalCounts === null}
+            />
+          )}
+
+          <ActiveFilterChips
+            filters={filters}
+            quickFilter={quickFilter}
+            updateUrl={updateUrl}
+            users={users}
+            projects={projects}
+            sprints={sprints}
+            milestones={milestones}
+            versions={versions}
+            onOpenFilterModal={() => setFiltersOpen(true)}
+          />
+
           <IssuesToolbar
             viewMode={viewMode}
             updateUrl={updateUrl}
@@ -694,6 +763,8 @@ export default function GlobalIssues() {
                 project={projectForTable}
                 projects={projects}
                 visibleColumnIds={visibleColumnIds}
+                columnWidths={columnsConfig.widths}
+                onColumnWidthChange={setColumnWidth}
                 selectedIssueIds={selectedIssueIds}
                 toggleSelectIssue={toggleSelectIssue}
                 toggleSelectAll={toggleSelectAll}
@@ -778,6 +849,9 @@ export default function GlobalIssues() {
         saveCurrentFilter={() => {}}
         hasActiveFilters={hasActiveFilters}
         projects={projects}
+        sprints={sprints}
+        milestones={milestones}
+        versions={versions}
       />
 
       <ColumnsConfigModal
@@ -805,6 +879,7 @@ export default function GlobalIssues() {
         statusList={selectedProject ? (selectedProject.statuses?.map((s) => s.name) ?? DEFAULT_STATUSES) : statusList}
         users={modalUsers}
         parentCandidates={parentCandidates}
+        editingIssueId={editIssue?._id}
         project={selectedProject}
         getIssueKey={getIssueKey}
         projects={projects}

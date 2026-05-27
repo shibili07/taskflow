@@ -20,12 +20,14 @@ export type NotifyUserParams = {
   body?: string;
   link?: string;
   metadata?: Record<string, unknown>;
+  /** When set, used as the email HTML body instead of the minimal default template. */
+  html?: string;
   /** When true, skips the email channel (e.g. a dedicated transactional email was already sent). */
   skipEmail?: boolean;
 };
 
 export async function notifyUser(params: NotifyUserParams): Promise<void> {
-  const { userId, eventKey, title, body = '', link, metadata, skipEmail } = params;
+  const { userId, eventKey, title, body = '', link, metadata, html, skipEmail } = params;
 
   if (await shouldSend(userId, eventKey, 'in_app')) {
     await createNotification({
@@ -48,8 +50,9 @@ export async function notifyUser(params: NotifyUserParams): Promise<void> {
     const user = await User.findById(userId).select('email').lean();
     const to = (user as { email?: string } | null)?.email;
     if (to) {
-      const html = `<div><h3>${title}</h3><p>${body}</p>${link ? `<p><a href="${link}">Open</a></p>` : ''}</div>`;
-      sendCustomerEmail(to, title, html).catch((err) => console.error('Email send failed:', err));
+      const emailHtml =
+        html ?? `<div><h3>${title}</h3><p>${body}</p>${link ? `<p><a href="${link}">Open</a></p>` : ''}</div>`;
+      sendCustomerEmail(to, title, emailHtml).catch((err) => console.error('Email send failed:', err));
     }
   }
 

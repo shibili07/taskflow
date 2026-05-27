@@ -10,7 +10,9 @@ interface TaskActivityCommentsProps {
   issue: Issue;
   comments: Comment[];
   onAddComment: (body: string) => void;
+  onUpdateComment?: (commentId: string, body: string) => void | Promise<void>;
   submittingComment: boolean;
+  editingCommentId?: string | null;
   mentionUsers?: Array<{ _id: string; name: string; email: string }>;
   workLogs: WorkLog[];
   currentUserId?: string;
@@ -25,7 +27,9 @@ export default function TaskActivityComments({
   issue,
   comments,
   onAddComment,
+  onUpdateComment,
   submittingComment,
+  editingCommentId,
   mentionUsers,
   workLogs,
   currentUserId,
@@ -92,7 +96,13 @@ export default function TaskActivityComments({
             ) : (
               comments.map((c) => (
                 <li key={c._id}>
-                  <TaskCommentItem comment={c} />
+                  <TaskCommentItem
+                    comment={c}
+                    currentUserId={currentUserId}
+                    mentionUsers={mentionUsers}
+                    onUpdate={onUpdateComment}
+                    submittingEdit={submittingComment && editingCommentId === c._id}
+                  />
                 </li>
               ))
             )}

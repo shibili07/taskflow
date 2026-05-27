@@ -54,6 +54,7 @@ export default function IssueDetail() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [submittingComment, setSubmittingComment] = useState(false);
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [submittingWorkLog, setSubmittingWorkLog] = useState(false);
   const [updatingField, setUpdatingField] = useState<string | null>(null);
   const [newLabel, setNewLabel] = useState('');
@@ -286,6 +287,18 @@ export default function IssueDetail() {
     }
   }
 
+  async function updateComment(commentId: string, body: string) {
+    if (!token || !issue?._id || !body.trim()) return;
+    setEditingCommentId(commentId);
+    setSubmittingComment(true);
+    const res = await commentsApi.update(issue._id, commentId, body.trim(), token);
+    setSubmittingComment(false);
+    setEditingCommentId(null);
+    if (res.success && res.data) {
+      setComments((prev) => prev.map((c) => (c._id === commentId ? res.data! : c)));
+    }
+  }
+
   async function addWorkLog(payload: {
     minutesSpent: number;
     date: string;
@@ -419,11 +432,11 @@ export default function IssueDetail() {
   const projectName = typeof issue.project === 'object' && issue.project ? issue.project.name : '';
 
   return (
-    <div className="h-full flex flex-col animate-fade-in">
-      <div className="flex-1 overflow-auto">
-        <div className="w-full max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_minmax(260px,340px)] gap-6">
-            <div className="min-w-0 space-y-4">
+    <div className="flex flex-1 flex-col min-h-0 lg:overflow-hidden animate-fade-in">
+      <div className="flex flex-1 min-h-0 w-full max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-4 lg:py-6">
+        <div className="grid flex-1 min-h-0 grid-cols-1 lg:grid-cols-[1fr_minmax(260px,340px)] gap-4 lg:gap-6 lg:overflow-hidden">
+          <div className="flex min-w-0 flex-col lg:min-h-0 lg:overflow-hidden">
+            <div className="shrink-0 pb-3 lg:border-b border-[color:var(--border-subtle)]/60 bg-[color:var(--bg-page)]">
               <TaskHeader
                 issue={issue}
                 issueId={issue._id}
@@ -437,6 +450,8 @@ export default function IssueDetail() {
                 getStatusMeta={getStatusMeta}
                 onUpdateTitle={updateTitle}
               />
+            </div>
+            <div className="space-y-4 pt-4 lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1 [scrollbar-width:thin] [scrollbar-color:var(--border-subtle)_transparent]">
               <TaskDescription issue={issue} onUpdateDescription={updateDescription} />
               <TaskSecondaryTabs
                 ref={secondaryTabsRef}
@@ -461,7 +476,9 @@ export default function IssueDetail() {
                 issue={issue}
                 comments={comments}
                 onAddComment={addComment}
+                onUpdateComment={updateComment}
                 submittingComment={submittingComment}
+                editingCommentId={editingCommentId}
                 mentionUsers={users}
                 workLogs={workLogs}
                 currentUserId={user?.id}
@@ -470,8 +487,9 @@ export default function IssueDetail() {
                 submittingWorkLog={submittingWorkLog}
               />
             </div>
+          </div>
 
-            <TaskDetailsSidebar
+          <TaskDetailsSidebar
               issue={issue}
               project={project}
               projectId={projectId}
@@ -504,7 +522,6 @@ export default function IssueDetail() {
               onNewLabelChange={setNewLabel}
               sprints={sprints}
             />
-          </div>
         </div>
       </div>
 

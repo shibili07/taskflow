@@ -1,6 +1,7 @@
 import { Comment } from './comment.model';
 import * as issueHistoryService from '../issues/issueHistory.service';
 import type { PaginationOptions, PaginatedResult } from '../projects/projects.service';
+import { ApiError } from '../../utils/ApiError';
 
 export async function create(
   issueId: string,
@@ -63,7 +64,12 @@ export async function update(
   body: string,
   authorId: string
 ): Promise<unknown | null> {
-  const oldComment = await Comment.findOne({ _id: commentId, issue: issueId }).select('body').lean();
+  const existing = await Comment.findOne({ _id: commentId, issue: issueId }).select('body author').lean();
+  if (!existing) return null;
+  if (String(existing.author) !== String(authorId)) {
+    throw new ApiError(403, 'You can only edit your own comments');
+  }
+  const oldComment = existing;
   const plainText = body.replace(/<[^>]+>/g, '');
   const portalVisible = /@requ\b/i.test(plainText);
   const comment = await Comment.findOneAndUpdate(

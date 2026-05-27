@@ -600,6 +600,132 @@ export function renderCustomerMemberInviteEmail(
   `.trim();
 }
 
+export interface IssueAssignedEmailParams {
+  issueKey: string;
+  title: string;
+  type: string;
+  status: string;
+  assigneeName?: string;
+  projectName?: string;
+  issueUrl: string;
+  changedByName?: string;
+}
+
+export function renderIssueAssignedEmail(params: IssueAssignedEmailParams): string {
+  const { issueKey, title, type, status, assigneeName, projectName, issueUrl, changedByName } = params;
+  const assigneeRow = assigneeName
+    ? `<tr><td style="padding:8px 12px;color:#64748b;">Assignee</td><td style="padding:8px 12px;"><strong>${escapeHtml(assigneeName)}</strong></td></tr>`
+    : '';
+  const projectRow = projectName
+    ? `<tr><td style="padding:8px 12px;color:#64748b;">Project</td><td style="padding:8px 12px;">${escapeHtml(projectName)}</td></tr>`
+    : '';
+  const byLine = changedByName
+    ? `<p style="color:#64748b;font-size:14px;">Assigned by ${escapeHtml(changedByName)}</p>`
+    : '';
+  return `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Issue assigned</title></head>
+<body style="font-family: system-ui, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <h2 style="color: #4f46e5;">Issue assigned to you</h2>
+  ${byLine}
+  <table style="width:100%;border-collapse:collapse;margin:16px 0;border:1px solid #e2e8f0;border-radius:8px;">
+    <tr><td style="padding:8px 12px;color:#64748b;width:120px;">ID</td><td style="padding:8px 12px;"><strong>${escapeHtml(issueKey)}</strong></td></tr>
+    <tr style="background:#f8fafc;"><td style="padding:8px 12px;color:#64748b;">Title</td><td style="padding:8px 12px;">${escapeHtml(title)}</td></tr>
+    <tr><td style="padding:8px 12px;color:#64748b;">Type</td><td style="padding:8px 12px;">${escapeHtml(type)}</td></tr>
+    <tr style="background:#f8fafc;"><td style="padding:8px 12px;color:#64748b;">Status</td><td style="padding:8px 12px;">${escapeHtml(status)}</td></tr>
+    ${assigneeRow}
+    ${projectRow}
+  </table>
+  <p><a href="${escapeHtml(issueUrl)}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;">Open issue</a></p>
+  <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;">
+  <p style="font-size: 12px; color: #64748b;">This is an automated message. Do not reply.</p>
+</body>
+</html>
+  `.trim();
+}
+
+export interface IssueUnassignedEmailParams {
+  issueKey: string;
+  title: string;
+  type: string;
+  status: string;
+  projectName?: string;
+  issueUrl: string;
+  changedByName?: string;
+}
+
+export function renderIssueUnassignedEmail(params: IssueUnassignedEmailParams): string {
+  const { issueKey, title, type, status, projectName, issueUrl, changedByName } = params;
+  const projectRow = projectName
+    ? `<tr><td style="padding:8px 12px;color:#64748b;">Project</td><td style="padding:8px 12px;">${escapeHtml(projectName)}</td></tr>`
+    : '';
+  const byLine = changedByName
+    ? `<p style="color:#64748b;font-size:14px;">Unassigned by ${escapeHtml(changedByName)}</p>`
+    : '';
+  return `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Issue unassigned</title></head>
+<body style="font-family: system-ui, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <h2 style="color: #4f46e5;">Issue unassigned from you</h2>
+  ${byLine}
+  <table style="width:100%;border-collapse:collapse;margin:16px 0;border:1px solid #e2e8f0;border-radius:8px;">
+    <tr><td style="padding:8px 12px;color:#64748b;width:120px;">ID</td><td style="padding:8px 12px;"><strong>${escapeHtml(issueKey)}</strong></td></tr>
+    <tr style="background:#f8fafc;"><td style="padding:8px 12px;color:#64748b;">Title</td><td style="padding:8px 12px;">${escapeHtml(title)}</td></tr>
+    <tr><td style="padding:8px 12px;color:#64748b;">Type</td><td style="padding:8px 12px;">${escapeHtml(type)}</td></tr>
+    <tr style="background:#f8fafc;"><td style="padding:8px 12px;color:#64748b;">Status</td><td style="padding:8px 12px;">${escapeHtml(status)}</td></tr>
+    ${projectRow}
+  </table>
+  <p><a href="${escapeHtml(issueUrl)}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;">Open issue</a></p>
+  <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;">
+  <p style="font-size: 12px; color: #64748b;">This is an automated message. Do not reply.</p>
+</body>
+</html>
+  `.trim();
+}
+
+export interface IssueStatusChangedEmailParams {
+  issueKey: string;
+  title: string;
+  type: string;
+  fromStatus: string;
+  toStatus: string;
+  assigneeName?: string;
+  issueUrl: string;
+  changedByName?: string;
+}
+
+export function renderIssueStatusChangedEmail(params: IssueStatusChangedEmailParams): string {
+  const { issueKey, title, type, fromStatus, toStatus, assigneeName, issueUrl, changedByName } = params;
+  const assigneeRow = assigneeName
+    ? `<tr style="background:#f8fafc;"><td style="padding:8px 12px;color:#64748b;">Assignee</td><td style="padding:8px 12px;">${escapeHtml(assigneeName)}</td></tr>`
+    : '';
+  const byLine = changedByName
+    ? `<p style="color:#64748b;font-size:14px;">Updated by ${escapeHtml(changedByName)}</p>`
+    : '';
+  return `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Issue status changed</title></head>
+<body style="font-family: system-ui, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <h2 style="color: #4f46e5;">Issue status changed</h2>
+  ${byLine}
+  <table style="width:100%;border-collapse:collapse;margin:16px 0;border:1px solid #e2e8f0;border-radius:8px;">
+    <tr><td style="padding:8px 12px;color:#64748b;width:120px;">ID</td><td style="padding:8px 12px;"><strong>${escapeHtml(issueKey)}</strong></td></tr>
+    <tr style="background:#f8fafc;"><td style="padding:8px 12px;color:#64748b;">Title</td><td style="padding:8px 12px;">${escapeHtml(title)}</td></tr>
+    <tr><td style="padding:8px 12px;color:#64748b;">Type</td><td style="padding:8px 12px;">${escapeHtml(type)}</td></tr>
+    <tr style="background:#f8fafc;"><td style="padding:8px 12px;color:#64748b;">Status</td><td style="padding:8px 12px;">${escapeHtml(fromStatus)} → <strong>${escapeHtml(toStatus)}</strong></td></tr>
+    ${assigneeRow}
+  </table>
+  <p><a href="${escapeHtml(issueUrl)}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;">Open issue</a></p>
+  <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;">
+  <p style="font-size: 12px; color: #64748b;">This is an automated message. Do not reply.</p>
+</body>
+</html>
+  `.trim();
+}
+
 export function renderTicketClosedEmail(
   requesterName: string,
   requestTitle: string,

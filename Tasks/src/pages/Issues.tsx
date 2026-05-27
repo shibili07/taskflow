@@ -30,6 +30,7 @@ import {
   parseFiltersFromSearchParams,
   buildSearchParams,
   getDefaultColumnsConfig,
+  parseIssuesColumnsConfig,
   ISSUE_TABLE_COLUMNS,
   DEFAULT_COLUMN_ORDER,
   DEFAULT_VISIBLE,
@@ -38,12 +39,19 @@ import {
   DEFAULT_PRIORITIES,
   PARAM_CREATE,
   PARAM_PARENT,
+  applyFiltersToListParams,
+  countActiveFilters,
+  hasAnyIssueFilters,
+  DEFAULT_FILTERS,
+  resolveIssueParentId,
+  filterParentCandidates,
   type QuickFilterValue,
   type ViewModeValue,
   type SavedFilter,
 } from '../components/issues';
 import {
   QuickFiltersBar,
+  QuickFilterLabelFilters,
   IssuesToolbar,
   ActiveFilterChips,
   JqlSearchPanel,
@@ -89,7 +97,14 @@ export default function Issues() {
   const [project, setProject] = useState<Project | null>(null);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [total, setTotal] = useState(0);
-  const [totalCounts, setTotalCounts] = useState<{ my: number; open: number; all: number } | null>(null);
+  const [totalCounts, setTotalCounts] = useState<{
+    my: number;
+    open: number;
+    all: number;
+    myOpenLabels: Array<{ label: string; count: number }>;
+    openLabels: Array<{ label: string; count: number }>;
+    allLabels: Array<{ label: string; count: number }>;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<User[]>([]);
   const [modal, setModal] = useState<'create' | 'edit' | null>(null);
@@ -118,7 +133,9 @@ export default function Issues() {
   const [saveFilterDialogOpen, setSaveFilterDialogOpen] = useState(false);
   const [saveFilterDialogName, setSaveFilterDialogName] = useState('');
   const [saveFilterName, setSaveFilterName] = useState('');
-  const [openFilterDropdown, setOpenFilterDropdown] = useState<'status' | 'type' | 'priority' | 'assignee' | 'reporter' | 'labels' | 'storyPoints' | 'project' | null>(null);
+  const [openFilterDropdown, setOpenFilterDropdown] = useState<
+    'status' | 'type' | 'priority' | 'assignee' | 'reporter' | 'labels' | 'storyPoints' | 'project' | 'sprint' | 'milestone' | 'fixVersion' | 'affectsVersions' | 'dueDate' | null
+  >(null);
   const [confirmDeleteIssue, setConfirmDeleteIssue] = useState<Issue | null>(null);
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [columnDragId, setColumnDragId] = useState<string | null>(null);
@@ -141,18 +158,10 @@ export default function Issues() {
   const [watchingLoadingId, setWatchingLoadingId] = useState<string | null>(null);
 
   const COLUMNS_CONFIG_KEY = `taskflow-issues-columns-${projectId ?? 'global'}`;
-  const [columnsConfig, setColumnsConfig] = useState<{ order: string[]; visible: Record<string, boolean> }>(() => {
+  const [columnsConfig, setColumnsConfig] = useState(() => {
     try {
       const raw = localStorage.getItem(COLUMNS_CONFIG_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as { order: string[]; visible: Record<string, boolean> };
-        const order = parsed.order?.length ? parsed.order : DEFAULT_COLUMN_ORDER;
-        const visible: Record<string, boolean> = { ...DEFAULT_VISIBLE };
-        ISSUE_TABLE_COLUMNS.forEach((c) => {
-          if (parsed.visible && c.id in parsed.visible) visible[c.id] = Boolean(parsed.visible[c.id]);
-        });
-        return { order, visible };
-      }
+      if (raw) return parseIssuesColumnsConfig(JSON.parse(raw) as Parameters<typeof parseIssuesColumnsConfig>[0]);
     } catch {}
     return getDefaultColumnsConfig();
   });
@@ -178,6 +187,13 @@ export default function Issues() {
     setColumnsConfig((prev) => ({ ...prev, order: newOrder }));
   };
   const resetColumns = () => setColumnsConfig(getDefaultColumnsConfig());
+
+  const setColumnWidth = (colId: string, width: number) => {
+    setColumnsConfig((prev) => ({
+      ...prev,
+      widths: { ...prev.widths, [colId]: width },
+    }));
+  };
 
   const SAVED_FILTERS_KEY = `taskflow-saved-filters-${projectId ?? 'global'}`;
   const [savedFilters, setSavedFilters] = useState<SavedFilter[]>([]);
@@ -242,15 +258,9 @@ export default function Issues() {
     });
   }, [token, projectId, SAVED_FILTERS_KEY]);
 
-  const hasActiveFilters = Boolean(
-    filters.status.length || filters.assignee.length || filters.reporter.length ||
-    filters.type.length || filters.priority.length || filters.labels.length ||
-    filters.storyPoints.length || filters.hasStoryPoints === false || filters.hasEstimate === false || filters.hasEstimate === true
-  );
-  const activeFilterCount =
-    filters.status.length + filters.assignee.length + filters.reporter.length +
-    filters.type.length + filters.priority.length + filters.labels.length +
-    filters.storyPoints.length + (filters.hasStoryPoints === false ? 1 : 0) + (filters.hasEstimate === false ? 1 : 0) + (filters.hasEstimate === true ? 1 : 0);
+  const hasActiveFilters = hasAnyIssueFilters(filters);
+  const activeFilterCount = countActiveFilters(filters);
+  const versions = useMemo(() => project?.versions ?? [], [project]);
   const allLabels = useMemo(() => [...new Set(issues.flatMap((i) => i.labels || []))].sort(), [issues]);
   const limit = 25;
 
@@ -264,6 +274,13 @@ export default function Issues() {
 
   const useJql = Boolean(jql.trim());
 
+  const quickFilterLabelCounts = useMemo(() => {
+    if (!totalCounts) return [];
+    if (quickFilter === 'my') return totalCounts.myOpenLabels;
+    if (quickFilter === 'open') return totalCounts.openLabels;
+    return totalCounts.allLabels;
+  }, [totalCounts, quickFilter]);
+
   function buildListParams(p: { page: number }) {
     if (useJql) {
       return { token: token!, page: p.page, limit: viewMode === 'kanban' ? 200 : 20, jql };
@@ -274,25 +291,14 @@ export default function Issues() {
       token: token!,
       project: projectId!,
     };
-    if (quickFilter === 'open' || quickFilter === 'my') {
+    if ((quickFilter === 'open' || quickFilter === 'my') && !filters.status.length) {
       let closedStatuses = project?.statuses?.length
         ? project.statuses.filter((s) => isClosedStatus(s)).map((s) => s.name).filter(Boolean)
         : statusList.filter((s) => isClosedStatus({ name: String(s) }));
       if (closedStatuses.length === 0) closedStatuses = [...LEGACY_CLOSED_STATUSES];
       params.statusExclude = closedStatuses.join(',');
     }
-    else {
-      if (filters.status.length) params.status = filters.status.join(',');
-      if (filters.assignee.length) params.assignee = filters.assignee.join(',');
-      if (filters.reporter.length) params.reporter = filters.reporter.join(',');
-      if (filters.type.length) params.type = filters.type.join(',');
-      if (filters.priority.length) params.priority = filters.priority.join(',');
-      if (filters.labels.length) params.labels = filters.labels.join(',');
-      if (filters.storyPoints.length) params.storyPoints = filters.storyPoints.join(',');
-      if (filters.hasStoryPoints === false) params.hasStoryPoints = 'false';
-      if (filters.hasEstimate === false) params.hasEstimate = 'false';
-      if (filters.hasEstimate === true) params.hasEstimate = 'true';
-    }
+    applyFiltersToListParams(params, filters);
     if (quickFilter === 'my' && user?.id) params.assignee = user.id;
     return params;
   }
@@ -314,7 +320,7 @@ export default function Issues() {
 
   function applySavedFilter(sf: SavedFilter) {
     updateUrl({
-      filters: { ...sf.filters, project: filters.project } as typeof filters,
+      filters: { ...DEFAULT_FILTERS, ...sf.filters, project: filters.project },
       quickFilter: sf.quickFilter,
       jql: sf.jql,
       viewMode: sf.viewMode,
@@ -471,12 +477,20 @@ const statusList = project?.statuses?.length ? project.statuses.map((s) => s.nam
           limit: 200,
         })
         .then((res) => {
-          if (res.success && res.data) setParentCandidates(res.data.data);
+          if (res.success && res.data) {
+            setParentCandidates(
+              filterParentCandidates(
+                res.data.data ?? [],
+                editIssue?._id,
+                resolveIssueParentId(editIssue?.parent)
+              )
+            );
+          }
         });
     } else {
       setParentCandidates([]);
     }
-  }, [modal, token, projectId]);
+  }, [modal, token, projectId, editIssue?._id]);
 
   async function handleToggleWatch(issueId: string) {
     if (!token) return;
@@ -527,7 +541,7 @@ const statusList = project?.statuses?.length ? project.statuses.map((s) => s.nam
       assignee: typeof issue.assignee === 'object' && issue.assignee ? issue.assignee._id : '',
       sprint: typeof issue.sprint === 'object' && issue.sprint ? issue.sprint._id : '',
       storyPoints: issue.storyPoints != null ? String(issue.storyPoints) : '',
-      parent: typeof issue.parent === 'object' && issue.parent ? issue.parent._id : '',
+      parent: resolveIssueParentId(issue.parent),
       milestone: typeof issue.milestone === 'object' && issue.milestone ? issue.milestone._id : '',
       customFieldValues: { ...(issue.customFieldValues ?? {}) },
       fixVersion: issue.fixVersion ?? '',
@@ -743,6 +757,17 @@ const statusList = project?.statuses?.length ? project.statuses.map((s) => s.nam
           totalCounts={totalCounts}
         />
 
+        {!useJql && (
+          <QuickFilterLabelFilters
+            quickFilter={quickFilter}
+            labelCounts={quickFilterLabelCounts}
+            selectedLabels={filters.labels}
+            onToggleLabel={(label) => toggleFilter('labels', label)}
+            onClearLabels={() => updateUrl({ filters: { ...filters, labels: [] }, page: 1 })}
+            loading={totalCounts === null}
+          />
+        )}
+
         <IssuesToolbar
           viewMode={viewMode}
           updateUrl={updateUrl}
@@ -781,6 +806,9 @@ const statusList = project?.statuses?.length ? project.statuses.map((s) => s.nam
           quickFilter={quickFilter}
           updateUrl={updateUrl}
           users={users}
+          sprints={sprints}
+          milestones={milestones}
+          versions={versions}
           onOpenFilterModal={() => setFiltersOpen(true)}
         />
 
@@ -805,6 +833,8 @@ const statusList = project?.statuses?.length ? project.statuses.map((s) => s.nam
             projectId={projectId!}
             project={project}
             visibleColumnIds={visibleColumnIds}
+            columnWidths={columnsConfig.widths}
+            onColumnWidthChange={setColumnWidth}
             selectedIssueIds={selectedIssueIds}
             toggleSelectIssue={toggleSelectIssue}
             toggleSelectAll={toggleSelectAll}
@@ -888,6 +918,9 @@ const statusList = project?.statuses?.length ? project.statuses.map((s) => s.nam
         setSaveFilterName={setSaveFilterName}
         saveCurrentFilter={saveCurrentFilter}
         hasActiveFilters={hasActiveFilters}
+        sprints={sprints}
+        milestones={milestones}
+        versions={versions}
       />
 
       <ColumnsConfigModal
@@ -915,6 +948,7 @@ const statusList = project?.statuses?.length ? project.statuses.map((s) => s.nam
         statusList={statusList}
         users={users}
         parentCandidates={parentCandidates}
+        editingIssueId={editIssue?._id}
         project={project}
         getIssueKey={getIssueKey}
         milestones={milestones}

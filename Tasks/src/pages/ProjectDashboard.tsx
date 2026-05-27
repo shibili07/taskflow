@@ -2,7 +2,8 @@ import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotifications } from '../contexts/NotificationsContext';
 import { useEffect, useState, useMemo } from 'react';
-import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Area, AreaChart, BarChart, Bar } from 'recharts';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Area, AreaChart, BarChart, Bar, Tooltip } from 'recharts';
+import ProjectPieChart from '../components/charts/ProjectPieChart';
 import { issuesApi, boardsApi, sprintsApi, projectsApi, dashboardApi, type EstimatesResponse, type ProjectMetricsResponse, type Project, type Issue } from '../lib/api';
 import MetricCard from '../components/MetricCard';
 import SectionCard from '../components/SectionCard';
@@ -378,7 +379,7 @@ export default function ProjectDashboard() {
             title="Issues by status"
             description="Distribution of issues in this project by status."
           >
-            <div className="h-56">
+            <div className="h-64 min-h-[16rem]">
               {statusLoading ? (
                 <div className="h-full flex items-center justify-center text-[color:var(--text-muted)] text-sm animate-pulse">
                   Loading chart…
@@ -388,29 +389,7 @@ export default function ProjectDashboard() {
                   No issues yet for this project.
                 </div>
               ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={statusData}
-                      dataKey="value"
-                      nameKey="name"
-                      innerRadius={50}
-                      outerRadius={80}
-                      paddingAngle={3}
-                      label={({ name, value }) => `${name}: ${value}`}
-                      labelLine={false}
-                    >
-                      {statusData.map((entry, index) => (
-                        <Cell
-                          key={entry.name}
-                          fill={getStatusColor(entry.name, index)}
-                        />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
+                <ProjectPieChart data={statusData} getColor={getStatusColor} />
               )}
             </div>
           </SectionCard>
@@ -421,7 +400,7 @@ export default function ProjectDashboard() {
             title="Issues by type"
             description="Distribution of issues in this project by type."
           >
-            <div className="h-56">
+            <div className="h-64 min-h-[16rem]">
               {metricsLoading ? (
                 <div className="h-full flex items-center justify-center text-[color:var(--text-muted)] text-sm animate-pulse">
                   Loading chart…
@@ -431,26 +410,7 @@ export default function ProjectDashboard() {
                   No issues yet for this project.
                 </div>
               ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={metrics.issuesByType}
-                      dataKey="value"
-                      nameKey="name"
-                      innerRadius={50}
-                      outerRadius={80}
-                      paddingAngle={3}
-                      label={({ name, value }) => `${name}: ${value}`}
-                      labelLine={false}
-                    >
-                      {metrics.issuesByType.map((entry, index) => (
-                        <Cell key={entry.name} fill={getTypeColor(entry.name, index)} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
+                <ProjectPieChart data={metrics.issuesByType} getColor={getTypeColor} />
               )}
             </div>
           </SectionCard>

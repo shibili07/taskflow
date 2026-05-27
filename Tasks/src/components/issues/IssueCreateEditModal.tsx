@@ -36,6 +36,7 @@ interface IssueCreateEditModalProps {
   statusList: string[];
   users: User[];
   parentCandidates: Issue[];
+  editingIssueId?: string;
   project: Project | null;
   getIssueKey: (issue: Issue) => string;
   projects?: Project[];
@@ -48,7 +49,9 @@ interface IssueCreateEditModalProps {
 }
 
 export function IssueCreateEditModal(props: IssueCreateEditModalProps) {
-  const { modal, setModal, form, setForm, submitError, submitting, handleSubmit, typeList, priorityList, statusList, users, parentCandidates, project, getIssueKey, projects = [], showProjectSelector, milestones = [], sprints = [], labelSuggestions = [], pendingFiles = [], onPendingFilesChange } = props;
+  const { modal, setModal, form, setForm, submitError, submitting, handleSubmit, typeList, priorityList, statusList, users, parentCandidates, editingIssueId, project, getIssueKey, projects = [], showProjectSelector, milestones = [], sprints = [], labelSuggestions = [], pendingFiles = [], onPendingFilesChange } = props;
+  const showParentField = form.type !== 'Epic';
+  const parentOptions = parentCandidates.filter((p) => p._id !== editingIssueId);
   if (!modal) return null;
   const [affectsOpen, setAffectsOpen] = useState(false);
   const affectsRef = useRef<HTMLDivElement | null>(null);
@@ -237,13 +240,20 @@ export function IssueCreateEditModal(props: IssueCreateEditModalProps) {
                 <p className="text-[11px] text-[color:var(--text-muted)]">Suggested from existing issues. You can also add new labels.</p>
               </div>
             </div>
-            {(typeList.includes('Epic') || typeList.includes('Story')) && (
+            {showParentField && (
               <div className="col-span-2">
-                <label className="block text-xs font-medium text-[color:var(--text-primary)] mb-1">Parent (Epic/Story)</label>
+                <label className="block text-xs font-medium text-[color:var(--text-primary)] mb-1">Parent issue</label>
                 <select value={form.parent} onChange={(e) => setForm((f) => ({ ...f, parent: e.target.value }))} className={inputCls}>
                   <option value="">None</option>
-                  {parentCandidates.map((p) => <option key={p._id} value={p._id}>{getIssueKey(p)} · {p.title}</option>)}
+                  {parentOptions.map((p) => (
+                    <option key={p._id} value={p._id}>
+                      {getIssueKey(p)} · {p.title} ({p.type})
+                    </option>
+                  ))}
                 </select>
+                {parentOptions.length === 0 && (
+                  <p className="mt-1 text-[11px] text-[color:var(--text-muted)]">No other issues in this project yet, or load the project list first.</p>
+                )}
               </div>
             )}
             {milestones.length > 0 && (

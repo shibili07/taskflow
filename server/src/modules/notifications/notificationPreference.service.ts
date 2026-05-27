@@ -31,7 +31,26 @@ function defaultState(): NotificationMethodState {
   };
 }
 
+const TASK_EMAIL_DEFAULT_EVENTS: NotificationEventKey[] = [
+  'task_assigned',
+  'task_unassigned',
+  'task_status_changed',
+];
+
 function defaultPreferences(): Record<NotificationEventKey, NotificationMethodState> {
+  const prefs = Object.fromEntries(NOTIFICATION_EVENTS.map((e) => [e, defaultState()])) as Record<
+    NotificationEventKey,
+    NotificationMethodState
+  >;
+  if (getAvailableMethods().email.enabled) {
+    for (const eventKey of TASK_EMAIL_DEFAULT_EVENTS) {
+      prefs[eventKey] = { ...prefs[eventKey], email: true };
+    }
+  }
+  return prefs;
+}
+
+export function legacyDefaultPreferences(): Record<NotificationEventKey, NotificationMethodState> {
   return Object.fromEntries(NOTIFICATION_EVENTS.map((e) => [e, defaultState()])) as Record<
     NotificationEventKey,
     NotificationMethodState
@@ -46,7 +65,8 @@ export function getAvailableMethods(): AvailableMethods {
         env.azureGraphTenantId &&
         env.azureGraphClientId &&
         env.azureGraphClientSecret &&
-        env.azureGraphFromEmail)
+        env.azureGraphFromEmail) ||
+      env.isSendgridEnabled
   );
   const smsEnabled = Boolean(
     env.isSmsEnabled &&
