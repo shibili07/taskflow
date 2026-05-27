@@ -62,14 +62,25 @@ const userSchema = new Schema<IUser>(
     permissions: { type: [String], default: [] },
     userType: { type: String, enum: Object.values(UserType), default: UserType.TASKFLOW },
     provider: { type: String, enum: Object.values(AuthProvider), default: AuthProvider.LOCAL },
-    googleId: { type: String, default: null },
-    microsoftId: { type: String, default: null },
-    providerEmail: { type: String, default: null },
+    /** Omit when unset — do not persist null (breaks sparse unique index). */
+    googleId: { type: String },
+    microsoftId: { type: String },
+    providerEmail: { type: String },
     passwordResetToken: { type: String, select: false },
     passwordResetExpires: { type: Date, select: false },
   },
   { timestamps: true }
 );
+
+userSchema.pre('save', function (next) {
+  if (this.googleId == null || this.googleId === '') {
+    this.set('googleId', undefined);
+  }
+  if (this.microsoftId == null || this.microsoftId === '') {
+    this.set('microsoftId', undefined);
+  }
+  next();
+});
 
 userSchema.pre('save', async function (next) {
   if (!this.isModified('password') || !this.password) return next();

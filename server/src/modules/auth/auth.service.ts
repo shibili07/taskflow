@@ -217,7 +217,8 @@ export async function login(input: LoginInput): Promise<{ user: AuthUser | Recor
     throw new ApiError(403, 'Email/password authentication is disabled. Use single sign-on.');
   }
   // First, try TF User collection
-  const tfUser = await User.findOne({ email: input.email }).select('+password').lean();
+  const emailNorm = input.email.toLowerCase().trim();
+  const tfUser = await User.findOne({ email: emailNorm }).select('+password').lean();
   if (tfUser) {
     const u = tfUser as { enabled?: boolean };
     if (u.enabled === false) {

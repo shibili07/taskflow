@@ -1,33 +1,15 @@
-/**
- * Creates a Super Admin role (all permissions) and optionally a super-admin user.
- *
- * Usage:
- *   Set env vars then run: npm run create-super-admin
- *
- * Env:
- *   SUPER_ADMIN_EMAIL    (required to create/update user) e.g. admin@example.com
- *   SUPER_ADMIN_PASSWORD (required for new user) e.g. YourSecurePassword
- *   SUPER_ADMIN_NAME     (optional) e.g. "Super Admin"
- *
- * If SUPER_ADMIN_EMAIL is set and the user exists, their role is updated to Super Admin.
- * If the user does not exist, they are created with the given password.
- * If SUPER_ADMIN_EMAIL is not set, only the Super Admin role is ensured (no user created).
- */
-
 import dotenv from 'dotenv';
 import path from 'path';
 
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 import mongoose from 'mongoose';
-import bcrypt from 'bcryptjs';
 import { Role } from '../modules/roles/role.model';
 import { User } from '../modules/auth/user.model';
 import { PERMISSION_CODES } from '../constants/permissions';
 
 const MONGODB_URI = process.env.MONGODB_URI ?? 'mongodb://localhost:27017/pm-tool';
 const SUPER_ADMIN_ROLE_NAME = 'Super Admin';
-const SALT_ROUNDS = 10;
 
 async function main(): Promise<void> {
   await mongoose.connect(MONGODB_URI);
@@ -63,36 +45,45 @@ async function main(): Promise<void> {
 
   const password = process.env.SUPER_ADMIN_PASSWORD?.trim();
   const name = process.env.SUPER_ADMIN_NAME?.trim() || 'Super Admin';
+  const emailNorm = email.toLowerCase();
 
-  const existingUser = await User.findOne({ email: email.toLowerCase() });
+  const existingUser = await User.findOne({ email: emailNorm });
 
   if (existingUser) {
-    await User.updateOne(
-      { _id: existingUser._id },
-      {
-        $set: {
-          roleId,
-          role: 'admin',
-          mustChangePassword: false,
-          ...(name ? { name } : {}),
-        },
-      }
-    );
-    console.log(`Updated user "${email}" to role "${SUPER_ADMIN_ROLE_NAME}".`);
+    const doc = await User.findById(existingUser._id).select('+password');
+    if (!doc) {
+      console.error(`User "${email}" not found after lookup.`);
+      await mongoose.disconnect();
+      process.exit(1);
+    }
+    doc.roleId = roleId;
+    doc.role = 'admin';
+    doc.mustChangePassword = false;
+    doc.name = name;
+    doc.enabled = true;
+    if (password && password.length >= 6) {
+      doc.password = password;
+      console.log(`Updated user "${email}" to role "${SUPER_ADMIN_ROLE_NAME}" and reset password.`);
+    } else {
+      console.log(
+        `Updated user "${email}" to role "${SUPER_ADMIN_ROLE_NAME}" (password unchanged; set SUPER_ADMIN_PASSWORD to reset).`
+      );
+    }
+    await doc.save();
   } else {
     if (!password || password.length < 6) {
       console.error('SUPER_ADMIN_PASSWORD is required (min 6 characters) to create a new user.');
       await mongoose.disconnect();
       process.exit(1);
     }
-    const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
     await User.create({
-      email: email.toLowerCase(),
-      password: hashedPassword,
+      email: emailNorm,
+      password,
       name,
       role: 'admin',
       roleId,
       mustChangePassword: false,
+      enabled: true,
     });
     console.log(`Created super admin user: ${email}`);
   }

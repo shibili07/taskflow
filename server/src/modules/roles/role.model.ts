@@ -1,5 +1,5 @@
 import mongoose, { Document, Schema } from 'mongoose';
-import { ALL_TASK_FLOW_PERMISSIONS, ALL_PROJECT_PERMISSIONS } from '../../shared/constants/permissions';
+import { isValidPermission } from '../../constants/permissions';
 
 export interface IRole extends Document {
   name: string;
@@ -11,9 +11,11 @@ export interface IRole extends Document {
 }
 
 function isValidRolePermissionSet(perms: string[]): boolean {
-  return perms.every(
-    (p) => ALL_TASK_FLOW_PERMISSIONS.includes(p) || ALL_PROJECT_PERMISSIONS.includes(p) || p.includes(':')
-  );
+  return perms.every((p) => isValidPermission(p));
+}
+
+function invalidRolePermissions(perms: string[]): string[] {
+  return perms.filter((p) => !isValidPermission(p));
 }
 
 const roleSchema = new Schema<IRole>(
@@ -25,7 +27,8 @@ const roleSchema = new Schema<IRole>(
       default: [],
       validate: {
         validator: (perms: string[]) => isValidRolePermissionSet(perms),
-        message: (props: { value: string[] }) => `Invalid permission(s): ${props.value}`,
+        message: (props: { value: string[] }) =>
+          `Invalid permission(s): ${invalidRolePermissions(props.value).join(', ')}`,
       },
     },
     isSystem: { type: Boolean, default: false },

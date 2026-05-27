@@ -51,21 +51,26 @@ const TaskIssueLinks = forwardRef<TaskIssueLinksHandle, TaskIssueLinksProps>(fun
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!searchQuery.trim() || !token) {
+    if (!searchQuery.trim() || !token || !projectId) {
       setSearchResults([]);
       return;
     }
     const t = setTimeout(() => {
       setSearching(true);
       issuesApi
-        .searchGlobal(searchQuery, 1, 10, token, issueId)
+        .search(projectId, searchQuery, 1, 10, token)
         .then((res) => {
-          if (res.success && res.data) setSearchResults(res.data.data ?? []);
+          if (!res.success || !res.data) {
+            setSearchResults([]);
+            return;
+          }
+          const rows = (res.data.data ?? []).filter((row) => row._id !== issueId);
+          setSearchResults(rows);
         })
         .finally(() => setSearching(false));
     }, 300);
     return () => clearTimeout(t);
-  }, [searchQuery, token, issueId]);
+  }, [searchQuery, token, issueId, projectId]);
 
   useImperativeHandle(
     ref,
@@ -174,9 +179,13 @@ const TaskIssueLinks = forwardRef<TaskIssueLinksHandle, TaskIssueLinksProps>(fun
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by key or title…"
-              className="w-full px-3 py-2 rounded-md bg-[color:var(--bg-page)] border border-[color:var(--border-subtle)] text-xs text-[color:var(--text-primary)] mb-2"
+              placeholder="Search by key or title in this project…"
+              disabled={!projectId}
+              className="w-full px-3 py-2 rounded-md bg-[color:var(--bg-page)] border border-[color:var(--border-subtle)] text-xs text-[color:var(--text-primary)] mb-2 disabled:opacity-50"
             />
+            {!projectId && (
+              <p className="text-[11px] text-[color:var(--text-muted)] mb-2">Open an issue in a project to link other issues.</p>
+            )}
             {searching && <p className="text-[11px] text-[color:var(--text-muted)] mb-2">Searching…</p>}
             {searchQuery.trim() && !searching && (
               <ul className="max-h-32 overflow-auto rounded-md border border-[color:var(--border-subtle)] mb-3">
