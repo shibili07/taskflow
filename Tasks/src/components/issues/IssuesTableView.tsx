@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { FiTrash2 } from 'react-icons/fi';
 import { MetaBadge } from '../MetaBadge';
 import { WatchButton } from '../issue';
 import { EditIcon } from '../icons/NavigationIcons';
@@ -37,6 +38,13 @@ interface IssuesTableViewProps {
   navigate: (path: string) => void;
 }
 
+function getAvatarBg(name: string): string {
+  const palette = ['#388bfd', '#3fb950', '#d29922', '#bc8cff', '#f85149', '#e8912d', '#58b9de', '#79c0ff'];
+  let hash = 0;
+  for (const char of name) hash = char.charCodeAt(0) + ((hash << 5) - hash);
+  return palette[Math.abs(hash) % palette.length];
+}
+
 function renderCell(
   colId: string,
   issue: Issue,
@@ -50,7 +58,7 @@ function renderCell(
   watchingLoadingId: string | null,
   handleToggleWatch: (id: string) => void,
   openEdit: (i: Issue) => void,
-  _setConfirmDeleteIssue: (i: Issue | null) => void,
+  setConfirmDeleteIssue: (i: Issue | null) => void,
   projects?: Project[]
 ) {
   const issueProjectId =
@@ -63,7 +71,7 @@ function renderCell(
   if (colId === 'project') {
     const proj = typeof issue.project === 'object' && issue.project ? issue.project : null;
     return (
-      <span className="text-[color:var(--text-muted)] text-sm truncate block" title={proj?.name ?? proj?.key}>
+      <span className="text-[color:var(--text-muted)] text-xs truncate block" title={proj?.name ?? proj?.key}>
         {proj ? proj.name ?? proj.key ?? '—' : '—'}
       </span>
     );
@@ -73,7 +81,7 @@ function renderCell(
   }
   if (colId === 'ticketId') {
     return (
-      <span className="font-mono text-[color:var(--text-muted)] text-xs truncate block" title={getIssueKey(issue)}>
+      <span className="font-mono text-[color:var(--text-muted)] text-[11px] font-semibold truncate block" title={getIssueKey(issue)}>
         {getIssueKey(issue)}
       </span>
     );
@@ -83,28 +91,48 @@ function renderCell(
     return (
       <Link
         to={pid ? `/projects/${pid}/issues/${encodeURIComponent(getIssueKey(issue))}` : '#'}
-        className={`font-medium text-[color:var(--text-primary)] hover:underline truncate block w-full text-sm flex items-center gap-1.5 ${issue.parent ? 'pl-4' : ''}`}
+        className={`font-medium text-[color:var(--text-primary)] hover:text-[color:var(--accent)] hover:underline truncate block w-full text-sm flex items-center gap-1.5 ${issue.parent ? 'pl-4' : ''}`}
         title={issue.title}
       >
-        {issue.parent && <span className="text-[10px] text-[color:var(--text-muted)] shrink-0" title="Subtask">↳</span>}
+        {issue.parent && <span className="text-[9px] text-[color:var(--text-muted)] shrink-0">↳</span>}
         {issue.title}
       </Link>
     );
   }
   if (colId === 'assignee') {
-    const name = typeof issue.assignee === 'object' && issue.assignee ? issue.assignee.name : '—';
+    const name = typeof issue.assignee === 'object' && issue.assignee ? issue.assignee.name : null;
+    if (!name) {
+      return <span className="text-[color:var(--text-muted)] text-sm">—</span>;
+    }
+    const initials = name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
     return (
-      <span className="truncate block" title={name}>
-        {name}
-      </span>
+      <div className="flex items-center gap-2 min-w-0">
+        <div
+          className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0 ring-1 ring-[color:var(--border-subtle)]"
+          style={{ backgroundColor: getAvatarBg(name) }}
+          title={name}
+        >
+          {initials}
+        </div>
+        <span className="truncate text-sm text-[color:var(--text-primary)]" title={name}>{name}</span>
+      </div>
     );
   }
   if (colId === 'reporter') {
-    const name = typeof issue.reporter === 'object' && issue.reporter ? issue.reporter.name : '—';
+    const name = typeof issue.reporter === 'object' && issue.reporter ? issue.reporter.name : null;
+    if (!name) return <span className="text-[color:var(--text-muted)] text-sm">—</span>;
+    const initials = name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
     return (
-      <span className="truncate block" title={name}>
-        {name}
-      </span>
+      <div className="flex items-center gap-2 min-w-0">
+        <div
+          className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0 ring-1 ring-[color:var(--border-subtle)]"
+          style={{ backgroundColor: getAvatarBg(name) }}
+          title={name}
+        >
+          {initials}
+        </div>
+        <span className="truncate text-sm text-[color:var(--text-primary)]" title={name}>{name}</span>
+      </div>
     );
   }
   if (colId === 'priority') {
@@ -116,24 +144,34 @@ function renderCell(
   if (colId === 'dueDate') {
     const isHot = isDueTodayOrPast(issue.dueDate);
     return issue.dueDate ? (
-      <span className={isHot ? 'text-red-400 font-medium' : 'text-[color:var(--text-muted)]'}>
+      <span className={`text-xs font-medium ${isHot ? 'text-red-400' : 'text-[color:var(--text-muted)]'}`}>
         {formatDateDDMMYYYY(issue.dueDate)}
       </span>
     ) : (
-      <span className="text-[color:var(--text-muted)]">—</span>
+      <span className="text-[color:var(--text-muted)] text-sm">—</span>
     );
   }
   if (colId === 'startDate') {
-    return issue.startDate ? formatDateDDMMYYYY(issue.startDate) : '—';
+    return issue.startDate ? (
+      <span className="text-xs text-[color:var(--text-muted)]">{formatDateDDMMYYYY(issue.startDate)}</span>
+    ) : (
+      <span className="text-[color:var(--text-muted)] text-sm">—</span>
+    );
   }
   if (colId === 'storyPoints') {
-    return issue.storyPoints != null ? issue.storyPoints : '—';
+    return issue.storyPoints != null ? (
+      <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-[color:var(--bg-elevated)] border border-[color:var(--border-subtle)] text-xs font-bold text-[color:var(--text-primary)]">
+        {issue.storyPoints}
+      </span>
+    ) : (
+      <span className="text-[color:var(--text-muted)] text-sm">—</span>
+    );
   }
   if (colId === 'created') {
-    return issue.createdAt ? formatDateDDMMYYYY(issue.createdAt) : '—';
+    return <span className="text-xs text-[color:var(--text-muted)]">{issue.createdAt ? formatDateDDMMYYYY(issue.createdAt) : '—'}</span>;
   }
   if (colId === 'updated') {
-    return issue.updatedAt ? formatDateDDMMYYYY(issue.updatedAt) : '—';
+    return <span className="text-xs text-[color:var(--text-muted)]">{issue.updatedAt ? formatDateDDMMYYYY(issue.updatedAt) : '—'}</span>;
   }
   if (colId === 'description') {
     const desc = issue.description ?? '';
@@ -147,35 +185,37 @@ function renderCell(
     const labels = issue.labels ?? [];
     return labels.length ? (
       <span className="flex flex-wrap gap-1">
-        {labels.slice(0, 3).map((l) => (
-          <span key={l} className="inline-flex px-2 py-0.5 rounded text-xs bg-[color:var(--bg-button-secondary)] text-[color:var(--text-primary)]">
+        {labels.slice(0, 2).map((l) => (
+          <span key={l} className="inline-flex px-2 py-0.5 rounded-md text-[11px] font-medium bg-[color:var(--bg-elevated)] border border-[color:var(--border-subtle)] text-[color:var(--text-muted)]">
             {l}
           </span>
         ))}
-        {labels.length > 3 && <span className="text-[color:var(--text-muted)] text-xs">+{labels.length - 3}</span>}
+        {labels.length > 2 && (
+          <span className="text-[color:var(--text-muted)] text-xs font-medium">+{labels.length - 2}</span>
+        )}
       </span>
     ) : (
-      '—'
+      <span className="text-[color:var(--text-muted)]">—</span>
     );
   }
   if (colId === 'fixVersion') {
     const versionName =
       issueProject?.versions?.find((v) => v.id === issue.fixVersion)?.name ?? issue.fixVersion ?? '—';
-    return <span className="text-[color:var(--text-muted)] text-sm truncate block">{versionName}</span>;
+    return <span className="text-[color:var(--text-muted)] text-xs truncate block">{versionName}</span>;
   }
   if (colId === 'affectsVersions') {
     const ids = issue.affectsVersions ?? [];
     const names = ids.map((id) => issueProject?.versions?.find((v) => v.id === id)?.name ?? id).filter(Boolean);
     const text = names.length ? names.join(', ') : '—';
     return (
-      <span className="text-[color:var(--text-muted)] text-sm truncate block" title={text}>
+      <span className="text-[color:var(--text-muted)] text-xs truncate block" title={text}>
         {text}
       </span>
     );
   }
   if (colId === 'actions') {
     return (
-      <div className="flex items-center justify-end gap-2">
+      <div className="flex items-center justify-end gap-1">
         <WatchButton
           watching={watchingStatus[issue._id] ?? false}
           loading={watchingLoadingId === issue._id}
@@ -187,14 +227,22 @@ function renderCell(
           type="button"
           onClick={() => openEdit(issue)}
           title="Edit"
-          className="p-1 rounded text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)] hover:bg-[color:var(--bg-page)] opacity-0 group-hover:opacity-100 transition"
+          className="p-1 rounded-md text-[color:var(--text-muted)] hover:text-[color:var(--accent)] hover:bg-[color:var(--accent-subtle)] opacity-0 group-hover:opacity-100 transition"
         >
           <EditIcon className="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => setConfirmDeleteIssue(issue)}
+          title="Delete"
+          className="p-1 rounded-md text-[color:var(--text-muted)] hover:text-red-500 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition"
+        >
+          <FiTrash2 className="w-3.5 h-3.5" />
         </button>
       </div>
     );
   }
-  return '—';
+  return <span className="text-[color:var(--text-muted)]">—</span>;
 }
 
 export function IssuesTableView(props: IssuesTableViewProps) {
@@ -216,7 +264,7 @@ export function IssuesTableView(props: IssuesTableViewProps) {
     watchingLoadingId,
     handleToggleWatch,
     openEdit,
-    setConfirmDeleteIssue: _setConfirmDeleteIssue2,
+    setConfirmDeleteIssue,
     navigate,
   } = props;
 
@@ -227,7 +275,7 @@ export function IssuesTableView(props: IssuesTableViewProps) {
     visibleColumnIds.reduce((sum, colId) => sum + getColumnWidthPx(colId, columnWidths), 0);
 
   return (
-    <div className="rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)] card-shadow overflow-hidden">
+    <div className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)] card-shadow overflow-hidden">
       <div className="overflow-x-auto">
         <table
           className="w-full text-left text-sm"
@@ -240,8 +288,8 @@ export function IssuesTableView(props: IssuesTableViewProps) {
             ))}
           </colgroup>
           <thead>
-            <tr className="border-b-2 border-[color:var(--border-subtle)] bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)]">
-              <th className="px-2 py-3 w-10 relative">
+            <tr className="border-b border-[color:var(--border-subtle)] bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)]">
+              <th className="px-3 py-2.5 w-10 relative">
                 <input
                   type="checkbox"
                   checked={issues.length > 0 && selectedIssueIds.size === issues.length}
@@ -256,7 +304,7 @@ export function IssuesTableView(props: IssuesTableViewProps) {
                 return (
                   <th
                     key={colId}
-                    className={`relative px-4 py-3 font-semibold uppercase text-[10px] tracking-wider select-none ${
+                    className={`relative px-3 py-2.5 font-semibold uppercase text-[10px] tracking-wider select-none ${
                       colId === 'actions' ? 'text-right' : 'text-left'
                     }`}
                   >
@@ -280,64 +328,68 @@ export function IssuesTableView(props: IssuesTableViewProps) {
               })}
             </tr>
           </thead>
-          <tbody className="divide-y divide-[color:var(--border-subtle)]/70">
-            {issues.map((issue) => (
-              <tr
-                key={issue._id}
-                role="button"
-                tabIndex={0}
-                onClick={(e) => {
-                  if ((e.target as HTMLElement).closest('a, button, [role="separator"]')) return;
-                  const pid =
-                    projectId ?? (typeof issue.project === 'object' && issue.project ? issue.project._id : '');
-                  if (pid) navigate(`/projects/${pid}/issues/${encodeURIComponent(getIssueKey(issue))}`);
-                }}
-                onKeyDown={(e) => {
-                  if (e.target !== e.currentTarget) return;
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
+          <tbody className="divide-y divide-[color:var(--border-subtle)]/50">
+            {issues.map((issue) => {
+              const priorityColor = getPriorityMeta(issue.priority)?.color;
+              return (
+                <tr
+                  key={issue._id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    if ((e.target as HTMLElement).closest('a, button, [role="separator"], input')) return;
                     const pid =
                       projectId ?? (typeof issue.project === 'object' && issue.project ? issue.project._id : '');
                     if (pid) navigate(`/projects/${pid}/issues/${encodeURIComponent(getIssueKey(issue))}`);
-                  }
-                }}
-                className="group bg-[color:var(--bg-surface)] hover:bg-[color:var(--bg-elevated)] transition cursor-pointer border-l-[3px] border-l-transparent hover:border-l-[color:var(--color-inprogress)]"
-              >
-                <td className="px-2 py-3 overflow-hidden" onClick={(e) => e.stopPropagation()}>
-                  <input
-                    type="checkbox"
-                    checked={selectedIssueIds.has(issue._id)}
-                    onChange={() => toggleSelectIssue(issue._id)}
-                    className="rounded border-[color:var(--border-subtle)]"
-                    aria-label={`Select ${getIssueKey(issue)}`}
-                  />
-                </td>
-                {visibleColumnIds.map((colId) => (
-                  <td
-                    key={colId}
-                    className={`px-4 py-3 overflow-hidden ${colId === 'actions' ? 'text-right' : ''}`}
-                    onClick={colId === 'actions' ? (e) => e.stopPropagation() : undefined}
-                  >
-                    {renderCell(
-                      colId,
-                      issue,
-                      project,
-                      projectId,
-                      getIssueKey,
-                      getTypeMeta,
-                      getPriorityMeta,
-                      getStatusMeta,
-                      watchingStatus,
-                      watchingLoadingId,
-                      handleToggleWatch,
-                      openEdit,
-                      _setConfirmDeleteIssue2,
-                      props.projects
-                    )}
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.target !== e.currentTarget) return;
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      const pid =
+                        projectId ?? (typeof issue.project === 'object' && issue.project ? issue.project._id : '');
+                      if (pid) navigate(`/projects/${pid}/issues/${encodeURIComponent(getIssueKey(issue))}`);
+                    }
+                  }}
+                  style={{ borderLeftColor: priorityColor ?? 'transparent' }}
+                  className="group bg-[color:var(--bg-surface)] hover:bg-[color:var(--bg-elevated)] transition-colors cursor-pointer border-l-[3px]"
+                >
+                  <td className="px-3 py-2.5 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIssueIds.has(issue._id)}
+                      onChange={() => toggleSelectIssue(issue._id)}
+                      className="rounded border-[color:var(--border-subtle)]"
+                      aria-label={`Select ${getIssueKey(issue)}`}
+                    />
                   </td>
-                ))}
-              </tr>
-            ))}
+                  {visibleColumnIds.map((colId) => (
+                    <td
+                      key={colId}
+                      className={`px-3 py-2.5 overflow-hidden ${colId === 'actions' ? 'text-right' : ''}`}
+                      onClick={colId === 'actions' ? (e) => e.stopPropagation() : undefined}
+                    >
+                      {renderCell(
+                        colId,
+                        issue,
+                        project,
+                        projectId,
+                        getIssueKey,
+                        getTypeMeta,
+                        getPriorityMeta,
+                        getStatusMeta,
+                        watchingStatus,
+                        watchingLoadingId,
+                        handleToggleWatch,
+                        openEdit,
+                        setConfirmDeleteIssue,
+                        props.projects
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

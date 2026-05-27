@@ -2,8 +2,6 @@ import { useState, useRef, useEffect } from 'react';
 import { FiBookmark, FiChevronDown, FiEye, FiGrid, FiUser, FiX } from 'react-icons/fi';
 import type { FiltersShape, QuickFilterValue } from './constants';
 
-const qfIcon = 'h-3.5 w-3.5 shrink-0';
-
 export interface SavedFilter {
   id: string;
   name: string;
@@ -21,9 +19,9 @@ interface QuickFiltersBarProps {
   savedFiltersError: string | null;
   applySavedFilter: (sf: SavedFilter) => void;
   removeSavedFilter: (id: string) => void;
-  /** When there are no saved filters, clicking "Saved" can open the filter modal or save dialog. */
   onSavedEmptyClick?: () => void;
   totalCounts: { my: number; open: number; all: number } | null;
+  hideQuickTabs?: boolean;
 }
 
 export function QuickFiltersBar({
@@ -36,110 +34,143 @@ export function QuickFiltersBar({
   removeSavedFilter,
   onSavedEmptyClick,
   totalCounts,
+  hideQuickTabs = false,
 }: QuickFiltersBarProps) {
   const [savedDropdownOpen, setSavedDropdownOpen] = useState(false);
   const savedDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!savedDropdownOpen) return;
-    const handleClickOutside = (e: MouseEvent) => {
+    const handler = (e: MouseEvent) => {
       if (savedDropdownRef.current && !savedDropdownRef.current.contains(e.target as Node)) {
         setSavedDropdownOpen(false);
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
   }, [savedDropdownOpen]);
 
-  return (
-    <div className="flex flex-wrap items-center gap-3 mb-4 py-3 border-b border-[color:var(--border-subtle)]">
-      <span className="text-[11px] font-semibold text-[color:var(--text-muted)] uppercase tracking-wider">Quick filters</span>
-      <div className="flex rounded-md border border-[color:var(--border-subtle)] overflow-hidden bg-[color:var(--bg-page)]">
-        <button
-          type="button"
-          onClick={() => updateUrl({ quickFilter: 'my', page: 1 })}
-          className={`inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium transition ${
-            quickFilter === 'my'
-              ? 'bg-[color:var(--accent)] text-white'
-              : 'text-[color:var(--text-muted)] hover:bg-[color:var(--bg-elevated)] hover:text-[color:var(--text-primary)]'
-          }`}
-        >
-          <FiUser className={qfIcon} aria-hidden />
-          My open issues {totalCounts && <span className={'ml-0.5 ' + (quickFilter === 'my' ? 'opacity-80' : 'opacity-60')}>({totalCounts.my})</span>}
-        </button>
-        <button
-          type="button"
-          onClick={() => updateUrl({ quickFilter: 'open', page: 1 })}
-          className={`inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium transition ${
-            quickFilter === 'open'
-              ? 'bg-[color:var(--accent)] text-white'
-              : 'text-[color:var(--text-muted)] hover:bg-[color:var(--bg-elevated)] hover:text-[color:var(--text-primary)]'
-          }`}
-        >
-          <FiEye className={qfIcon} aria-hidden />
-          Open issues {totalCounts && <span className={'ml-0.5 ' + (quickFilter === 'open' ? 'opacity-80' : 'opacity-60')}>({totalCounts.open})</span>}
-        </button>
-        <button
-          type="button"
-          onClick={() => updateUrl({ quickFilter: 'all', page: 1 })}
-          className={`inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium transition ${
-            quickFilter === 'all'
-              ? 'bg-[color:var(--accent)] text-white'
-              : 'text-[color:var(--text-muted)] hover:bg-[color:var(--bg-elevated)] hover:text-[color:var(--text-primary)]'
-          }`}
-        >
-          <FiGrid className={qfIcon} aria-hidden />
-          All issues {totalCounts && <span className={'ml-0.5 ' + (quickFilter === 'all' ? 'opacity-80' : 'opacity-60')}>({totalCounts.all})</span>}
-        </button>
-      </div>
+  const VISIBLE_SAVED = 5;
+  const visibleSaved = savedFilters.slice(0, VISIBLE_SAVED);
+  const overflowSaved = savedFilters.slice(VISIBLE_SAVED);
 
-      <span className="text-[11px] font-semibold text-[color:var(--text-muted)] uppercase tracking-wider shrink-0 ml-1">Saved</span>
-      {savedFiltersError && (
-        <span className="text-xs text-red-500">{savedFiltersError}</span>
+  const tabs = [
+    { key: 'my' as QuickFilterValue, label: 'My Open', Icon: FiUser, count: totalCounts?.my },
+    { key: 'open' as QuickFilterValue, label: 'Open', Icon: FiEye, count: totalCounts?.open },
+    { key: 'all' as QuickFilterValue, label: 'All', Icon: FiGrid, count: totalCounts?.all },
+  ];
+
+  const hasSavedContent = savedFiltersError || savedFiltersLoading || savedFilters.length > 0 || true;
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2 border-b border-[color:var(--border-subtle)]">
+
+      {/* Quick filter tabs */}
+      {!hideQuickTabs && (
+        <div className="flex items-center gap-1">
+          {tabs.map(({ key, label, Icon, count }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => updateUrl({ quickFilter: key, page: 1 })}
+              className={`group inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+                quickFilter === key
+                  ? 'bg-[color:var(--accent)] text-white border-[color:var(--accent)] shadow-sm'
+                  : 'bg-transparent border-transparent text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)] hover:bg-[color:var(--bg-elevated)] hover:border-[color:var(--border-subtle)]'
+              }`}
+            >
+              <Icon className="h-3 w-3 shrink-0" aria-hidden />
+              {label}
+              {count !== undefined && (
+                <span className={`inline-flex items-center justify-center px-1.5 min-w-[1.2rem] h-5 rounded-full text-[10px] font-bold transition-colors ${
+                  quickFilter === key
+                    ? 'bg-white/25 text-white'
+                    : 'bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)] group-hover:bg-[color:var(--bg-page)]'
+                }`}>
+                  {count}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
       )}
+
+      {/* Divider */}
+      {!hideQuickTabs && hasSavedContent && (
+        <div className="h-4 w-px bg-[color:var(--border-subtle)] shrink-0" />
+      )}
+
+      {/* Saved filters */}
+      {savedFiltersError && (
+        <span className="text-xs text-red-500 shrink-0">{savedFiltersError}</span>
+      )}
+
       {savedFiltersLoading ? (
-        <span className="text-xs text-[color:var(--text-muted)]">Loading…</span>
+        <span className="text-xs text-[color:var(--text-muted)] animate-pulse">Loading…</span>
       ) : savedFilters.length > 0 ? (
-        <div className="relative" ref={savedDropdownRef}>
-          <button
-            type="button"
-            onClick={() => setSavedDropdownOpen((o) => !o)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)] text-[color:var(--text-primary)] text-xs hover:bg-[color:var(--bg-page)]"
-          >
-            <FiBookmark className={qfIcon} aria-hidden />
-            Saved ({savedFilters.length})
-            <FiChevronDown className={`${qfIcon} transition ${savedDropdownOpen ? '-rotate-180' : ''}`} aria-hidden />
-          </button>
-          {savedDropdownOpen && (
-            <div className="absolute left-0 top-full z-20 mt-1 py-1 min-w-[180px] rounded-md border border-[color:var(--border-subtle)] bg-[color:var(--bg-elevated)] shadow-[0_8px_24px_rgba(0,0,0,0.2)] max-h-64 overflow-y-auto">
-              {savedFilters.map((sf) => (
-                <div
-                  key={sf.id}
-                  className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-[color:var(--bg-page)] group"
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      applySavedFilter(sf);
-                      setSavedDropdownOpen(false);
-                    }}
-                    className="flex-1 text-left text-xs text-[color:var(--text-primary)] font-medium truncate"
-                  >
-                    {sf.name}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeSavedFilter(sf.id);
-                    }}
-                    className="inline-flex items-center justify-center p-0.5 rounded text-[color:var(--text-muted)] hover:text-red-500 opacity-0 group-hover:opacity-100 transition"
-                    aria-label={`Remove ${sf.name}`}
-                  >
-                    <FiX className="h-3.5 w-3.5" aria-hidden />
-                  </button>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[10px] font-semibold text-[color:var(--text-muted)] uppercase tracking-wider shrink-0 flex items-center gap-1">
+            <FiBookmark className="h-3 w-3" aria-hidden />
+            Saved
+          </span>
+
+          {visibleSaved.map((sf) => (
+            <span
+              key={sf.id}
+              className="group inline-flex items-center gap-0.5 pl-2.5 pr-0.5 py-1 rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)] text-xs hover:border-[color:var(--accent)]/40 hover:text-[color:var(--text-primary)] hover:bg-[color:var(--bg-page)] transition-all"
+            >
+              <button
+                type="button"
+                onClick={() => applySavedFilter(sf)}
+                className="text-left truncate max-w-[96px] font-medium"
+                title={sf.name}
+              >
+                {sf.name}
+              </button>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); removeSavedFilter(sf.id); }}
+                className="ml-0.5 p-0.5 rounded text-[color:var(--text-muted)] hover:text-red-500 opacity-0 group-hover:opacity-100 transition"
+                aria-label={`Remove ${sf.name}`}
+              >
+                <FiX className="h-3 w-3" aria-hidden />
+              </button>
+            </span>
+          ))}
+
+          {overflowSaved.length > 0 && (
+            <div className="relative" ref={savedDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setSavedDropdownOpen((o) => !o)}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--bg-elevated)] text-xs text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)] hover:border-[color:var(--border-emphasis)] transition"
+              >
+                +{overflowSaved.length} more
+                <FiChevronDown className={`h-3 w-3 transition-transform ${savedDropdownOpen ? '-rotate-180' : ''}`} aria-hidden />
+              </button>
+              {savedDropdownOpen && (
+                <div className="absolute left-0 top-full z-30 mt-1 py-1 min-w-[160px] rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--bg-elevated)] shadow-xl max-h-52 overflow-y-auto">
+                  {overflowSaved.map((sf) => (
+                    <div key={sf.id} className="group/item flex items-center justify-between gap-2 px-3 py-1.5 hover:bg-[color:var(--bg-page)] transition">
+                      <button
+                        type="button"
+                        onClick={() => { applySavedFilter(sf); setSavedDropdownOpen(false); }}
+                        className="flex-1 text-left text-xs text-[color:var(--text-primary)] font-medium truncate"
+                      >
+                        {sf.name}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); removeSavedFilter(sf.id); }}
+                        className="p-0.5 rounded text-[color:var(--text-muted)] hover:text-red-500 opacity-0 group-hover/item:opacity-100 transition"
+                        aria-label={`Remove ${sf.name}`}
+                      >
+                        <FiX className="h-3 w-3" aria-hidden />
+                      </button>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
           )}
         </div>
@@ -147,9 +178,10 @@ export function QuickFiltersBar({
         <button
           type="button"
           onClick={onSavedEmptyClick}
-          className="text-xs text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)] underline"
+          className="inline-flex items-center gap-1.5 text-xs text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)] hover:underline transition"
         >
-          No saved filters — open Filter to save current view
+          <FiBookmark className="h-3 w-3" aria-hidden />
+          Save current view as filter
         </button>
       )}
     </div>
