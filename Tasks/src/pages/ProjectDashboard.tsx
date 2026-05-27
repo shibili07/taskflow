@@ -2,7 +2,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotifications } from '../contexts/NotificationsContext';
 import { useEffect, useState, useMemo } from 'react';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Area, AreaChart, BarChart, Bar, Tooltip } from 'recharts';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Area, AreaChart, BarChart, Bar, Tooltip, Legend } from 'recharts';
 import ProjectPieChart from '../components/charts/ProjectPieChart';
 import { issuesApi, boardsApi, sprintsApi, projectsApi, dashboardApi, type EstimatesResponse, type ProjectMetricsResponse, type Project, type Issue } from '../lib/api';
 import MetricCard from '../components/MetricCard';

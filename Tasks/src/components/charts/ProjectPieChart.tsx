@@ -31,10 +31,10 @@ export default function ProjectPieChart({ data, getColor }: ProjectPieChartProps
         </Pie>
         <Tooltip
           {...chartTooltipProps}
-          formatter={(value: number, name: string) => [
-            `${value} issue${value === 1 ? '' : 's'}`,
-            name,
-          ]}
+          formatter={(value, name) => {
+            const count = typeof value === 'number' ? value : 0;
+            return [`${count} issue${count === 1 ? '' : 's'}`, String(name ?? '')];
+          }}
         />
         <Legend {...projectPieLegendProps} />
       </PieChart>
