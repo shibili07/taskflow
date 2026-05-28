@@ -71,6 +71,7 @@ describe('notifyIssueAssigned', () => {
     expect(call.eventKey).toBe('task_assigned');
     expect(call.html).toContain('PRJ-1');
     expect(call.html).toContain('Fix login');
+    expect(call.html).toContain('Open issue');
     expect(call.link).toContain('/projects/proj-1/issues/PRJ-1');
   });
 

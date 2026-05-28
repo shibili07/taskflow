@@ -190,12 +190,121 @@ export function renderForgotPasswordEmail(params: ForgotPasswordEmailParams): st
   `.trim();
 }
 
-function escapeHtml(s: string): string {
+export function escapeHtml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+// ── Shared HTML layout (TaskFlow + Customer Portal) ─────────────────────────
+
+export type EmailAccent = 'indigo' | 'green' | 'red';
+
+export function tfDetailTable(rows: { label: string; value: string }[]): string {
+  const body = rows
+    .map(
+      (r) => `
+    <tr>
+      <td style="padding:10px 14px;border:1px solid #e2e8f0;background:#f1f5f9;color:#64748b;font-size:12px;font-weight:600;vertical-align:top;width:34%;">${escapeHtml(r.label)}</td>
+      <td style="padding:10px 14px;border:1px solid #e2e8f0;font-size:14px;color:#0f172a;vertical-align:top;line-height:1.5;">${
+        r.value ? escapeHtml(r.value) : '—'
+      }</td>
+    </tr>`
+    )
+    .join('');
+  return `<table role="presentation" style="width:100%;border-collapse:collapse;border-radius:10px;overflow:hidden;margin:18px 0;">${body}</table>`;
+}
+
+export function tfCta(url: string, label: string): string {
+  return `<p style="margin:20px 0 8px 0;">
+  <a href="${escapeHtml(url)}" style="display:inline-block;background:#4f46e5;color:#fff !important;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:600;font-size:14px;box-shadow:0 2px 6px rgba(79,70,229,0.35);">${escapeHtml(label)}</a>
+</p>
+<p style="font-size:12px;color:#64748b;margin:0;">or copy: <a href="${escapeHtml(url)}" style="color:#4f46e5;word-break:break-all;">${escapeHtml(url)}</a></p>`;
+}
+
+export function tfNextStepsBox(title: string, lines: string[]): string {
+  if (lines.length === 0) return '';
+  const items = lines
+    .map(
+      (line) => `<li style="margin:0 0 6px 0; padding-left:2px; line-height:1.5;">${escapeHtml(line)}</li>`
+    )
+    .join('');
+  return `<div style="background:linear-gradient(180deg,#f8fafc 0%,#f1f5f9 100%);border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px;margin:20px 0;">
+  <p style="margin:0 0 8px 0; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:#475569;">${escapeHtml(title)}</p>
+  <ul style="margin:0; padding-left:18px; color:#334155; font-size:14px;">${items}</ul>
+</div>`;
+}
+
+export function tfEmailWrap(inner: string, accent: EmailAccent = 'indigo'): string {
+  const top =
+    accent === 'green'
+      ? 'linear-gradient(90deg, #16a34a, #22c55e)'
+      : accent === 'red'
+        ? 'linear-gradient(90deg, #b91c1c, #ef4444)'
+        : 'linear-gradient(90deg, #4f46e5, #7c3aed)';
+  return `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width" /></head>
+<body style="margin:0;padding:0;background:#f1f5f9;">
+  <div style="max-width:600px;margin:0 auto;padding:24px 16px 40px;font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;">
+    <div style="background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 4px 24px rgba(15,23,42,0.08);border:1px solid #e2e8f0;">
+      <div style="height:5px;background:${top};"></div>
+      <div style="padding:28px 24px 32px; color:#0f172a; line-height:1.6;">
+        ${inner}
+        <p style="margin:28px 0 0; padding-top:20px; border-top:1px solid #e2e8f0; font-size:12px; color:#64748b;">This is an automated message from TaskFlow. Please do not reply to this email.</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+function tfHeading(title: string, subtitle?: string): string {
+  const sub = subtitle
+    ? `<p style="margin:0 0 16px; color:#475569; font-size:14px;">${escapeHtml(subtitle)}</p>`
+    : '';
+  return `<p style="font-size:16px; font-weight:600; margin:0 0 8px; color:#0f172a;">${escapeHtml(title)}</p>${sub}`;
+}
+
+function tfActorLine(prefix: string, actorName?: string): string {
+  if (!actorName) return '';
+  return `<p style="margin:0 0 12px; color:#64748b; font-size:14px;">${escapeHtml(prefix)} <strong>${escapeHtml(actorName)}</strong></p>`;
+}
+
+function tfExcerptBlock(label: string, text: string): string {
+  if (!text.trim()) return '';
+  return `<div style="border-left:4px solid #4f46e5;padding:10px 14px;margin:16px 0;background:#eef2ff;border-radius:0 8px 8px 0;">
+    <p style="margin:0; font-size:12px; font-weight:600; color:#4338ca;">${escapeHtml(label)}</p>
+    <p style="margin:6px 0 0; font-size:14px; color:#312e81; white-space:pre-wrap;">${escapeHtml(text.trim())}</p>
+  </div>`;
+}
+
+function formatChangeValue(v: unknown): string {
+  if (v == null || v === '') return '—';
+  return String(v);
+}
+
+function issueDetailRows(params: {
+  issueKey: string;
+  title: string;
+  type?: string;
+  status?: string;
+  statusTransition?: string;
+  assigneeName?: string;
+  projectName?: string;
+}): { label: string; value: string }[] {
+  const rows: { label: string; value: string }[] = [
+    { label: 'Issue', value: params.issueKey },
+    { label: 'Title', value: params.title },
+  ];
+  if (params.type) rows.push({ label: 'Type', value: params.type });
+  if (params.statusTransition) rows.push({ label: 'Status', value: params.statusTransition });
+  else if (params.status) rows.push({ label: 'Status', value: params.status });
+  if (params.assigneeName) rows.push({ label: 'Assignee', value: params.assigneeName });
+  if (params.projectName) rows.push({ label: 'Project', value: params.projectName });
+  return rows;
 }
 
 export async function sendInviteEmail(params: InviteEmailParams): Promise<void> {
@@ -246,120 +355,37 @@ export interface ProjectInviteEmailParams {
   projectName: string;
   inviterName: string;
   appUrl: string;
+  roleName?: string;
 }
 
 export function renderProjectInviteEmail(params: ProjectInviteEmailParams): string {
-  const { projectName, inviterName, appUrl } = params;
-  const inboxUrl = `${appUrl}/inbox`;
-  return `
-<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><title>Project invitation</title></head>
-<body style="font-family: system-ui, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-  <h2 style="color: #4f46e5;">Project invitation</h2>
-  <p>You've been invited to the project <strong>${escapeHtml(projectName)}</strong> by ${escapeHtml(inviterName)}.</p>
-  <p>Open your inbox in TaskFlow to accept or decline the invitation.</p>
-  <p><a href="${escapeHtml(inboxUrl)}" style="color: #4f46e5;">Open inbox</a></p>
-  <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;">
-  <p style="font-size: 12px; color: #64748b;">This is an automated message. Do not reply.</p>
-</body>
-</html>
-  `.trim();
+  const { projectName, inviterName, appUrl, roleName } = params;
+  const inboxUrl = `${appUrl.replace(/\/$/, '')}/inbox`;
+  const rows: { label: string; value: string }[] = [
+    { label: 'Project', value: projectName },
+    { label: 'Invited by', value: inviterName },
+  ];
+  if (roleName) rows.push({ label: 'Role', value: roleName });
+  const inner = `${tfHeading('Project invitation', 'You have been invited to collaborate on a project in TaskFlow.')}
+${tfDetailTable(rows)}
+${tfNextStepsBox('What to do next', [
+  'Open your TaskFlow inbox to accept or decline this invitation.',
+  'Once accepted, you will see the project in your workspace.',
+])}
+${tfCta(inboxUrl, 'Open inbox')}`;
+  return tfEmailWrap(inner, 'indigo');
 }
 
 export async function sendProjectInviteEmail(to: string, params: ProjectInviteEmailParams): Promise<void> {
   await sendEmail(to, `Project invitation: ${params.projectName}`, renderProjectInviteEmail(params));
 }
 
-export interface WatcherNotificationParams {
-  type: string;
-  title: string;
-  body?: string;
-  issueKey: string;
-  issueUrl: string;
-}
-
-export function renderWatcherNotificationEmail(params: WatcherNotificationParams): string {
-  const { title, body, issueUrl } = params;
-  return `
-<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><title>${escapeHtml(title)}</title></head>
-<body style="font-family: system-ui, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-  <h2 style="color: #4f46e5;">${escapeHtml(title)}</h2>
-  ${body ? `<p>${escapeHtml(body)}</p>` : ''}
-  <p><a href="${escapeHtml(issueUrl)}" style="color: #4f46e5;">View issue</a></p>
-  <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;">
-  <p style="font-size: 12px; color: #64748b;">This is an automated message. Do not reply.</p>
-</body>
-</html>
-  `.trim();
-}
-
-export async function sendWatcherNotificationEmail(to: string, params: WatcherNotificationParams): Promise<void> {
-  await sendEmail(to, params.title, renderWatcherNotificationEmail(params));
-}
-
 // ── Customer Portal request emails (shared layout) ─────────────────────────
 
-function crDetailTable(rows: { label: string; value: string }[]): string {
-  const body = rows
-    .map(
-      (r) => `
-    <tr>
-      <td style="padding:10px 14px;border:1px solid #e2e8f0;background:#f1f5f9;color:#64748b;font-size:12px;font-weight:600;vertical-align:top;width:34%;">${escapeHtml(r.label)}</td>
-      <td style="padding:10px 14px;border:1px solid #e2e8f0;font-size:14px;color:#0f172a;vertical-align:top;line-height:1.5;">${
-        r.value ? escapeHtml(r.value) : '—'
-      }</td>
-    </tr>`
-    )
-    .join('');
-  return `<table role="presentation" style="width:100%;border-collapse:collapse;border-radius:10px;overflow:hidden;margin:18px 0;">${body}</table>`;
-}
-
-function crCtaBlock(url: string, label: string): string {
-  return `<p style="margin:20px 0 8px 0;">
-  <a href="${escapeHtml(url)}" style="display:inline-block;background:#4f46e5;color:#fff !important;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:600;font-size:14px;box-shadow:0 2px 6px rgba(79,70,229,0.35);">${escapeHtml(label)}</a>
-</p>
-<p style="font-size:12px;color:#64748b;margin:0;">or copy: <a href="${escapeHtml(url)}" style="color:#4f46e5;word-break:break-all;">${escapeHtml(url)}</a></p>`;
-}
-
-function crNextStepsBox(title: string, lines: string[]): string {
-  if (lines.length === 0) return '';
-  const items = lines
-    .map(
-      (line) => `<li style="margin:0 0 6px 0; padding-left:2px; line-height:1.5;">${escapeHtml(line)}</li>`
-    )
-    .join('');
-  return `<div style="background:linear-gradient(180deg,#f8fafc 0%,#f1f5f9 100%);border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px;margin:20px 0;">
-  <p style="margin:0 0 8px 0; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:#475569;">${escapeHtml(title)}</p>
-  <ul style="margin:0; padding-left:18px; color:#334155; font-size:14px;">${items}</ul>
-</div>`;
-}
-
-function crBodyWrap(inner: string, accent: 'indigo' | 'green' | 'red' = 'indigo'): string {
-  const top =
-    accent === 'green'
-      ? 'linear-gradient(90deg, #16a34a, #22c55e)'
-      : accent === 'red'
-        ? 'linear-gradient(90deg, #b91c1c, #ef4444)'
-        : 'linear-gradient(90deg, #4f46e5, #7c3aed)';
-  return `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width" /></head>
-<body style="margin:0;padding:0;background:#f1f5f9;">
-  <div style="max-width:600px;margin:0 auto;padding:24px 16px 40px;font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;">
-    <div style="background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 4px 24px rgba(15,23,42,0.08);border:1px solid #e2e8f0;">
-      <div style="height:5px;background:${top};"></div>
-      <div style="padding:28px 24px 32px; color:#0f172a; line-height:1.6;">
-        ${inner}
-        <p style="margin:28px 0 0; padding-top:20px; border-top:1px solid #e2e8f0; font-size:12px; color:#64748b;">This is an automated message from TaskFlow. Please do not reply to this email.</p>
-      </div>
-    </div>
-  </div>
-</body>
-</html>`;
-}
+const crDetailTable = tfDetailTable;
+const crCtaBlock = tfCta;
+const crNextStepsBox = tfNextStepsBox;
+const crBodyWrap = tfEmailWrap;
 
 export interface CustomerRequestSubmittedParams {
   requesterName: string;
@@ -613,36 +639,13 @@ export interface IssueAssignedEmailParams {
 
 export function renderIssueAssignedEmail(params: IssueAssignedEmailParams): string {
   const { issueKey, title, type, status, assigneeName, projectName, issueUrl, changedByName } = params;
-  const assigneeRow = assigneeName
-    ? `<tr><td style="padding:8px 12px;color:#64748b;">Assignee</td><td style="padding:8px 12px;"><strong>${escapeHtml(assigneeName)}</strong></td></tr>`
-    : '';
-  const projectRow = projectName
-    ? `<tr><td style="padding:8px 12px;color:#64748b;">Project</td><td style="padding:8px 12px;">${escapeHtml(projectName)}</td></tr>`
-    : '';
-  const byLine = changedByName
-    ? `<p style="color:#64748b;font-size:14px;">Assigned by ${escapeHtml(changedByName)}</p>`
-    : '';
-  return `
-<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><title>Issue assigned</title></head>
-<body style="font-family: system-ui, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-  <h2 style="color: #4f46e5;">Issue assigned to you</h2>
-  ${byLine}
-  <table style="width:100%;border-collapse:collapse;margin:16px 0;border:1px solid #e2e8f0;border-radius:8px;">
-    <tr><td style="padding:8px 12px;color:#64748b;width:120px;">ID</td><td style="padding:8px 12px;"><strong>${escapeHtml(issueKey)}</strong></td></tr>
-    <tr style="background:#f8fafc;"><td style="padding:8px 12px;color:#64748b;">Title</td><td style="padding:8px 12px;">${escapeHtml(title)}</td></tr>
-    <tr><td style="padding:8px 12px;color:#64748b;">Type</td><td style="padding:8px 12px;">${escapeHtml(type)}</td></tr>
-    <tr style="background:#f8fafc;"><td style="padding:8px 12px;color:#64748b;">Status</td><td style="padding:8px 12px;">${escapeHtml(status)}</td></tr>
-    ${assigneeRow}
-    ${projectRow}
-  </table>
-  <p><a href="${escapeHtml(issueUrl)}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;">Open issue</a></p>
-  <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;">
-  <p style="font-size: 12px; color: #64748b;">This is an automated message. Do not reply.</p>
-</body>
-</html>
-  `.trim();
+  const inner = `${tfHeading('Issue assigned to you')}
+${tfActorLine('Assigned by', changedByName)}
+${tfDetailTable(
+  issueDetailRows({ issueKey, title, type, status, assigneeName, projectName })
+)}
+${tfCta(issueUrl, 'Open issue')}`;
+  return tfEmailWrap(inner, 'indigo');
 }
 
 export interface IssueUnassignedEmailParams {
@@ -657,32 +660,11 @@ export interface IssueUnassignedEmailParams {
 
 export function renderIssueUnassignedEmail(params: IssueUnassignedEmailParams): string {
   const { issueKey, title, type, status, projectName, issueUrl, changedByName } = params;
-  const projectRow = projectName
-    ? `<tr><td style="padding:8px 12px;color:#64748b;">Project</td><td style="padding:8px 12px;">${escapeHtml(projectName)}</td></tr>`
-    : '';
-  const byLine = changedByName
-    ? `<p style="color:#64748b;font-size:14px;">Unassigned by ${escapeHtml(changedByName)}</p>`
-    : '';
-  return `
-<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><title>Issue unassigned</title></head>
-<body style="font-family: system-ui, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-  <h2 style="color: #4f46e5;">Issue unassigned from you</h2>
-  ${byLine}
-  <table style="width:100%;border-collapse:collapse;margin:16px 0;border:1px solid #e2e8f0;border-radius:8px;">
-    <tr><td style="padding:8px 12px;color:#64748b;width:120px;">ID</td><td style="padding:8px 12px;"><strong>${escapeHtml(issueKey)}</strong></td></tr>
-    <tr style="background:#f8fafc;"><td style="padding:8px 12px;color:#64748b;">Title</td><td style="padding:8px 12px;">${escapeHtml(title)}</td></tr>
-    <tr><td style="padding:8px 12px;color:#64748b;">Type</td><td style="padding:8px 12px;">${escapeHtml(type)}</td></tr>
-    <tr style="background:#f8fafc;"><td style="padding:8px 12px;color:#64748b;">Status</td><td style="padding:8px 12px;">${escapeHtml(status)}</td></tr>
-    ${projectRow}
-  </table>
-  <p><a href="${escapeHtml(issueUrl)}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;">Open issue</a></p>
-  <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;">
-  <p style="font-size: 12px; color: #64748b;">This is an automated message. Do not reply.</p>
-</body>
-</html>
-  `.trim();
+  const inner = `${tfHeading('Issue unassigned from you')}
+${tfActorLine('Unassigned by', changedByName)}
+${tfDetailTable(issueDetailRows({ issueKey, title, type, status, projectName }))}
+${tfCta(issueUrl, 'Open issue')}`;
+  return tfEmailWrap(inner, 'indigo');
 }
 
 export interface IssueStatusChangedEmailParams {
@@ -698,32 +680,120 @@ export interface IssueStatusChangedEmailParams {
 
 export function renderIssueStatusChangedEmail(params: IssueStatusChangedEmailParams): string {
   const { issueKey, title, type, fromStatus, toStatus, assigneeName, issueUrl, changedByName } = params;
-  const assigneeRow = assigneeName
-    ? `<tr style="background:#f8fafc;"><td style="padding:8px 12px;color:#64748b;">Assignee</td><td style="padding:8px 12px;">${escapeHtml(assigneeName)}</td></tr>`
-    : '';
-  const byLine = changedByName
-    ? `<p style="color:#64748b;font-size:14px;">Updated by ${escapeHtml(changedByName)}</p>`
-    : '';
-  return `
-<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><title>Issue status changed</title></head>
-<body style="font-family: system-ui, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-  <h2 style="color: #4f46e5;">Issue status changed</h2>
-  ${byLine}
-  <table style="width:100%;border-collapse:collapse;margin:16px 0;border:1px solid #e2e8f0;border-radius:8px;">
-    <tr><td style="padding:8px 12px;color:#64748b;width:120px;">ID</td><td style="padding:8px 12px;"><strong>${escapeHtml(issueKey)}</strong></td></tr>
-    <tr style="background:#f8fafc;"><td style="padding:8px 12px;color:#64748b;">Title</td><td style="padding:8px 12px;">${escapeHtml(title)}</td></tr>
-    <tr><td style="padding:8px 12px;color:#64748b;">Type</td><td style="padding:8px 12px;">${escapeHtml(type)}</td></tr>
-    <tr style="background:#f8fafc;"><td style="padding:8px 12px;color:#64748b;">Status</td><td style="padding:8px 12px;">${escapeHtml(fromStatus)} → <strong>${escapeHtml(toStatus)}</strong></td></tr>
-    ${assigneeRow}
-  </table>
-  <p><a href="${escapeHtml(issueUrl)}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;">Open issue</a></p>
-  <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;">
-  <p style="font-size: 12px; color: #64748b;">This is an automated message. Do not reply.</p>
-</body>
-</html>
-  `.trim();
+  const inner = `${tfHeading('Issue status changed')}
+${tfActorLine('Updated by', changedByName)}
+${tfDetailTable(
+  issueDetailRows({
+    issueKey,
+    title,
+    type,
+    statusTransition: `${fromStatus} → ${toStatus}`,
+    assigneeName,
+  })
+)}
+${tfCta(issueUrl, 'Open issue')}`;
+  return tfEmailWrap(inner, 'indigo');
+}
+
+export interface TaskMentionedEmailParams {
+  issueKey: string;
+  issueTitle: string;
+  projectName?: string;
+  authorName?: string;
+  commentExcerpt: string;
+  issueUrl: string;
+}
+
+export function renderTaskMentionedEmail(params: TaskMentionedEmailParams): string {
+  const { issueKey, issueTitle, projectName, authorName, commentExcerpt, issueUrl } = params;
+  const inner = `${tfHeading('You were mentioned in a comment')}
+${tfActorLine('Mentioned by', authorName)}
+${tfDetailTable(
+  issueDetailRows({ issueKey, title: issueTitle, projectName })
+)}
+${tfExcerptBlock('Comment', commentExcerpt)}
+${tfCta(issueUrl, 'View comment')}`;
+  return tfEmailWrap(inner, 'indigo');
+}
+
+export interface WatchCommentEmailParams {
+  issueKey: string;
+  issueTitle: string;
+  projectName?: string;
+  authorName?: string;
+  commentExcerpt: string;
+  issueUrl: string;
+}
+
+export function renderWatchCommentEmail(params: WatchCommentEmailParams): string {
+  const { issueKey, issueTitle, projectName, authorName, commentExcerpt, issueUrl } = params;
+  const inner = `${tfHeading('New comment on watched issue')}
+${tfActorLine('Comment by', authorName)}
+${tfDetailTable(issueDetailRows({ issueKey, title: issueTitle, projectName }))}
+${tfExcerptBlock('Comment', commentExcerpt)}
+${tfCta(issueUrl, 'Open issue')}`;
+  return tfEmailWrap(inner, 'indigo');
+}
+
+export interface WatchStatusEmailParams {
+  issueKey: string;
+  issueTitle: string;
+  projectName?: string;
+  fromStatus: string;
+  toStatus: string;
+  actorName?: string;
+  issueUrl: string;
+}
+
+export function renderWatchStatusEmail(params: WatchStatusEmailParams): string {
+  const { issueKey, issueTitle, projectName, fromStatus, toStatus, actorName, issueUrl } = params;
+  const inner = `${tfHeading('Status changed on watched issue')}
+${tfActorLine('Updated by', actorName)}
+${tfDetailTable(
+  issueDetailRows({
+    issueKey,
+    title: issueTitle,
+    projectName,
+    statusTransition: `${fromStatus} → ${toStatus}`,
+  })
+)}
+${tfCta(issueUrl, 'Open issue')}`;
+  return tfEmailWrap(inner, 'indigo');
+}
+
+export interface FieldChangeRow {
+  field: string;
+  from?: unknown;
+  to?: unknown;
+}
+
+export interface WatchFieldEmailParams {
+  issueKey: string;
+  issueTitle: string;
+  projectName?: string;
+  changes: FieldChangeRow[];
+  actorName?: string;
+  issueUrl: string;
+  summary?: string;
+}
+
+export function renderWatchFieldEmail(params: WatchFieldEmailParams): string {
+  const { issueKey, issueTitle, projectName, changes, actorName, issueUrl, summary } = params;
+  const changeRows =
+    changes.length > 0
+      ? changes.slice(0, 8).map((c) => ({
+          label: c.field,
+          value: `${formatChangeValue(c.from)} → ${formatChangeValue(c.to)}`,
+        }))
+      : summary
+        ? [{ label: 'Update', value: summary }]
+        : [{ label: 'Update', value: 'Issue fields were updated' }];
+  const inner = `${tfHeading('Watched issue updated')}
+${tfActorLine('Updated by', actorName)}
+${tfDetailTable(issueDetailRows({ issueKey, title: issueTitle, projectName }))}
+${tfDetailTable(changeRows)}
+${tfCta(issueUrl, 'Open issue')}`;
+  return tfEmailWrap(inner, 'indigo');
 }
 
 export function renderTicketClosedEmail(

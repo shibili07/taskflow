@@ -5,6 +5,7 @@ import { ProjectMember } from '../projects/projectMember.model';
 import { ApiError } from '../../utils/ApiError';
 import { env } from '../../config/env';
 import { notifyUser } from '../notifications/notificationDispatch.service';
+import { buildWatcherEmailHtml, type WatcherNotifyMeta } from './watcherNotification.service';
 
 async function ensureUserCanAccessIssue(userId: string, issueId: string): Promise<void> {
   const issue = await Issue.findById(issueId).select('project').lean();
@@ -77,17 +78,32 @@ export async function notifyWatchers(
     type: string;
     title: string;
     body?: string;
-    meta?: Record<string, unknown> & { projectId?: string; issueKey?: string };
+    meta?: WatcherNotifyMeta & Record<string, unknown>;
   }
 ): Promise<void> {
   const userIds = await getWatcherUserIds(issueId);
   const toNotify = userIds.filter((id) => id !== excludeUserId);
-  const projectId = params.meta?.projectId as string | undefined;
-  const issueKey = params.meta?.issueKey as string | undefined;
+  const projectId = params.meta?.projectId;
+  const issueKey = params.meta?.issueKey;
   const issueUrl =
     projectId && issueKey
-      ? `${env.appUrl}/projects/${projectId}/issues/${encodeURIComponent(issueKey)}`
-      : `${env.appUrl}/inbox`;
+      ? `${env.appUrl.replace(/\/$/, '')}/projects/${projectId}/issues/${encodeURIComponent(issueKey)}`
+      : `${env.appUrl.replace(/\/$/, '')}/inbox`;
+
+  const notifyMeta: WatcherNotifyMeta = {
+    ...params.meta,
+    issueId,
+    projectId,
+    issueKey,
+  };
+
+  const html = await buildWatcherEmailHtml(
+    params.type,
+    params.body ?? '',
+    issueUrl,
+    notifyMeta,
+    excludeUserId
+  );
 
   const metaWithUrl = { ...params.meta, url: issueUrl };
 
@@ -104,6 +120,7 @@ export async function notifyWatchers(
       title: params.title,
       body: params.body ?? '',
       link: issueUrl,
+      html,
       metadata: metaWithUrl,
     });
   }

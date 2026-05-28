@@ -10,7 +10,16 @@ import {
   legacyDefaultPreferences,
 } from '../modules/notifications/notificationPreference.service';
 
-const TASK_EMAIL_EVENT_KEYS = ['task_assigned', 'task_unassigned', 'task_status_changed'] as const;
+const EMAIL_ON_BY_DEFAULT_EVENT_KEYS = [
+  'task_assigned',
+  'task_unassigned',
+  'task_status_changed',
+  'task_mentioned',
+  'watch_comment',
+  'watch_status',
+  'watch_field',
+  'project_invitation',
+] as const;
 
 function methodStatesEqual(a: NotificationMethodState, b: NotificationMethodState): boolean {
   return NOTIFICATION_METHODS.every((m) => Boolean(a[m]) === Boolean(b[m]));
@@ -44,7 +53,7 @@ export async function migrateTaskNotificationEmailDefaultsIfNeeded(): Promise<vo
     if (!matchesLegacyDefaultMatrix(prefs)) continue;
 
     const next = { ...prefs };
-    for (const eventKey of TASK_EMAIL_EVENT_KEYS) {
+    for (const eventKey of EMAIL_ON_BY_DEFAULT_EVENT_KEYS) {
       const prev = next[eventKey] ?? legacyDefaultPreferences()[eventKey];
       next[eventKey] = { ...prev, email: true };
     }

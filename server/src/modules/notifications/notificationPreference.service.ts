@@ -31,10 +31,15 @@ function defaultState(): NotificationMethodState {
   };
 }
 
-const TASK_EMAIL_DEFAULT_EVENTS: NotificationEventKey[] = [
+const EMAIL_ON_BY_DEFAULT_EVENTS: NotificationEventKey[] = [
   'task_assigned',
   'task_unassigned',
   'task_status_changed',
+  'task_mentioned',
+  'watch_comment',
+  'watch_status',
+  'watch_field',
+  'project_invitation',
 ];
 
 function defaultPreferences(): Record<NotificationEventKey, NotificationMethodState> {
@@ -43,7 +48,7 @@ function defaultPreferences(): Record<NotificationEventKey, NotificationMethodSt
     NotificationMethodState
   >;
   if (getAvailableMethods().email.enabled) {
-    for (const eventKey of TASK_EMAIL_DEFAULT_EVENTS) {
+    for (const eventKey of EMAIL_ON_BY_DEFAULT_EVENTS) {
       prefs[eventKey] = { ...prefs[eventKey], email: true };
     }
   }

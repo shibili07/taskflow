@@ -601,7 +601,14 @@ export async function update(
         type: 'status_changed',
         title: `Status changed: ${issueKey}`,
         body: `${String(statusChange2.fromValue ?? '—')} → ${String(statusChange2.toValue)}`,
-        meta: { issueId: id, issueKey, projectId },
+        meta: {
+          issueId: id,
+          issueKey,
+          projectId,
+          issueTitle: String(issue.title ?? ''),
+          fromStatus: String(statusChange2.fromValue ?? '—'),
+          toStatus: String(statusChange2.toValue),
+        },
       }).catch(() => {});
     }
     const otherFieldChanges = changes.filter((c) => c.field !== 'status');
@@ -614,7 +621,17 @@ export async function update(
         type: 'field_changed',
         title: `Updated: ${issueKey}`,
         body: summary,
-        meta: { issueId: id, issueKey, projectId },
+        meta: {
+          issueId: id,
+          issueKey,
+          projectId,
+          issueTitle: String(issue.title ?? ''),
+          changes: otherFieldChanges.slice(0, 8).map((c) => ({
+            field: c.field,
+            from: c.fromValue,
+            to: c.toValue,
+          })),
+        },
       }).catch(() => {});
     }
 

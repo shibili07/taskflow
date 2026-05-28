@@ -13,9 +13,8 @@ import * as watchersService from '../watchers/watchers.service';
 import * as issuesService from '../issues/issues.service';
 import { ProjectMember } from '../projects/projectMember.model';
 import { extractMentionedUserIds } from '../../utils/mentions';
-import { env } from '../../config/env';
 import { ApiError } from '../../utils/ApiError';
-import { notifyUser } from '../notifications/notificationDispatch.service';
+import * as commentNotification from './commentNotification.service';
 
 export async function createComment(req: Request, res: Response): Promise<void> {
   const authorId = req.user?.id;
@@ -25,41 +24,54 @@ export async function createComment(req: Request, res: Response): Promise<void> 
     authorId,
     req.body.body
   );
-  const issue = await issuesService.findById(req.params.issueId) as { key?: string; title?: string; project?: { _id?: string; key?: string } } | null;
+  const issue = await issuesService.findById(req.params.issueId) as {
+    key?: string;
+    title?: string;
+    project?: { _id?: string; key?: string; name?: string };
+  } | null;
   const issueKey = issue?.key ?? (issue?.project ? `${(issue.project as { key?: string }).key}-?` : '?');
   const projectId = issue?.project?._id ? String(issue.project._id) : undefined;
   const commentId = (comment as { _id?: { toString?: () => string } })?._id;
+  const bodyStr = (req.body.body as string) ?? '';
+  const commentExcerpt = bodyStr.replace(/<[^>]+>/g, '').slice(0, 300);
+
   watchersService.notifyWatchers(req.params.issueId, authorId, {
     type: 'comment_added',
     title: `New comment on ${issueKey}`,
-    body: (req.body.body as string)?.slice(0, 200) ?? '',
-    meta: { issueId: req.params.issueId, issueKey, projectId, commentId: commentId ? String(commentId) : undefined },
+    body: commentExcerpt.slice(0, 200),
+    meta: {
+      issueId: req.params.issueId,
+      issueKey,
+      projectId,
+      issueTitle: issue?.title ?? '',
+      projectName: issue?.project?.name,
+      authorUserId: authorId,
+      commentExcerpt,
+      commentId: commentId ? String(commentId) : undefined,
+    },
   }).catch(() => {});
 
-  const bodyStr = (req.body.body as string) ?? '';
   const mentionedIds = extractMentionedUserIds(bodyStr).filter((id) => id !== authorId);
   if (mentionedIds.length > 0 && projectId) {
     const members = await ProjectMember.find({ project: projectId, user: { $in: mentionedIds } })
       .select('user')
       .lean();
     const memberUserIds = members.map((m) => String(m.user));
-    const issueUrl = `${env.appUrl}/projects/${projectId}/issues/${encodeURIComponent(issueKey)}`;
-    const payload = {
-      title: `You were mentioned in ${issueKey}`,
-      body: bodyStr.replace(/<[^>]+>/g, '').slice(0, 100) || 'New comment',
-      url: issueUrl,
-      data: { type: 'mentioned', issueId: req.params.issueId, issueKey, projectId, commentId: commentId ? String(commentId) : undefined },
-    };
-    for (const userId of memberUserIds) {
-      notifyUser({
-        userId,
-        eventKey: 'task_mentioned',
-        title: payload.title,
-        body: payload.body,
-        link: issueUrl,
-        metadata: payload.data,
-      }).catch(() => {});
-    }
+    commentNotification
+      .notifyMentionedInComment({
+        issue: {
+          issueId: req.params.issueId,
+          issueKey,
+          issueTitle: issue?.title ?? issueKey,
+          projectId,
+          projectName: issue?.project?.name,
+        },
+        commentBody: bodyStr,
+        authorUserId: authorId,
+        mentionedUserIds: memberUserIds,
+        commentId: commentId ? String(commentId) : undefined,
+      })
+      .catch(() => {});
   }
 
   res.status(201).json({ success: true, data: comment });

@@ -147,13 +147,16 @@ export async function inviteToProject(
   if (pendingInvite) throw new ApiError(409, 'User has already been invited.');
 
   let roleObjectId: mongoose.Types.ObjectId;
+  let roleName: string | undefined;
   if (roleId) {
-    const role = await Role.findById(roleId).select('_id').lean();
+    const role = await Role.findById(roleId).select('_id name').lean();
     if (!role) throw new ApiError(400, 'Selected role not found');
     roleObjectId = role._id;
+    roleName = (role as { name?: string }).name;
   } else {
     const role = await getOrCreateProjectMemberRole();
     roleObjectId = role._id;
+    roleName = (role as { name?: string }).name;
   }
   await ProjectInvitation.deleteOne({ project: projectId, user: userIdStr });
 
@@ -183,6 +186,7 @@ export async function inviteToProject(
     projectName,
     inviterName,
     appUrl: env.appUrl,
+    roleName,
   }).catch((err) => console.error('Failed to send project invite email:', err));
 
   notifyUser({
@@ -192,6 +196,7 @@ export async function inviteToProject(
     body: `You were invited to the project "${projectName}". Open your inbox to accept or decline.`,
     link: `${env.appUrl}/inbox`,
     metadata: { type: 'project_invitation', invitationId: invitation._id.toString() },
+    skipEmail: true,
   }).catch((err) => console.error('Failed to send project invitation notification:', err));
 
   return ProjectInvitation.findById(invitation._id)
