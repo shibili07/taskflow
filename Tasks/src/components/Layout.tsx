@@ -10,6 +10,8 @@ import { taskflowAppSettingsHref } from '../lib/appSettingsHref';
 import { projectsApi, issuesApi, type Project, type Issue, getIssueKey } from '../lib/api';
 import { APP_VERSION } from '../appVersion';
 import { canAccessTaskflowWorkspaceSettings } from '../utils/taskflowWorkspaceSettingsAccess';
+import { userHasPermission } from '../utils/permissions';
+import { PROJECT_PERMISSIONS } from '@shared/constants/permissions';
 import {
   DashboardIcon,
   InboxIcon,
@@ -52,53 +54,64 @@ function buildGlobalNav(
     { to: '/', label: 'Dashboard', icon: <DashboardIcon />, end: true },
     { to: '/inbox', label: 'Inbox', icon: <InboxIcon /> },
   ];
-  const has = (p: string) => perms.includes(p);
-  if (has('project.project.list') || has('projects:list') || has('project.project.create') || has('projects:create')) {
+  const can = (...required: string[]) => required.some((p) => userHasPermission(perms, p));
+
+  if (
+    can(
+      'project.project.list',
+      'projects:list',
+      'project.project.create',
+      'projects:create'
+    )
+  ) {
     nav.push({ to: '/projects', label: 'Projects', icon: <ProjectsIcon /> });
   }
-  if (has('project.project.create') || has('projects:create')) {
+  if (can('project.project.create', 'projects:create')) {
     nav.push({ to: '/project-templates', label: 'Templates', icon: <PackageIcon /> });
   }
-  if (has('project.project.list') || has('projects:list')) {
+  if (can('project.project.list', 'projects:list')) {
     nav.push({ to: '/issues', label: 'All Issues', icon: <IssuesIcon /> });
   }
-  if (has('taskflow.report.read') || has('reports:view')) {
+  if (can('taskflow.report.read', 'reports:view')) {
     nav.push({ to: '/timesheet', label: 'Timesheet', icon: <TimesheetIcon /> });
-  }
-  if (has('taskflow.analytics.view') || has('analytics:view')) {
-    nav.push({ to: '/performance-report', label: 'Performance', icon: <TimesheetIcon /> });
-    nav.push({ to: '/workload', label: 'Workload', icon: <TimesheetIcon /> });
-  }
-  if (has('taskflow.report.read') || has('reports:view')) {
     nav.push({ to: '/estimates', label: 'Estimates', icon: <TimesheetIcon /> });
-  }
-  if (user?.role === 'admin') {
-    nav.push({ to: '/audit-logs', label: 'Audit logs', icon: <SettingsIcon /> });
-  }
-  if (has('taskflow.analytics.view') || has('analytics:view')) {
-    nav.push({ to: '/analytics', label: 'Analytics', icon: <SettingsIcon /> });
-  }
-  if (has('taskflow.report.read') || has('reports:view')) {
     nav.push({ to: '/reports', label: 'Reports', icon: <SettingsIcon /> });
   }
-  if (has('taskflow.cost_report.view')) {
+  if (can('taskflow.analytics.view', 'analytics:view')) {
+    nav.push({ to: '/performance-report', label: 'Performance', icon: <TimesheetIcon /> });
+    nav.push({ to: '/workload', label: 'Workload', icon: <TimesheetIcon /> });
+    nav.push({ to: '/analytics', label: 'Analytics', icon: <SettingsIcon /> });
+  }
+  if (
+    can('taskflow.analytics.view', 'analytics:view', 'taskflow.report.read', 'reports:view', 'project.project.list', 'projects:list')
+  ) {
+    nav.push({ to: '/portfolio', label: 'Portfolio', icon: <SettingsIcon /> });
+    nav.push({ to: '/defect-metrics', label: 'Defect Metrics', icon: <SettingsIcon /> });
+  }
+  if (user?.role === 'admin') {
+    nav.push({ to: '/executive', label: 'Executive', icon: <SettingsIcon /> });
+    nav.push({ to: '/audit-logs', label: 'Audit logs', icon: <SettingsIcon /> });
+  }
+  if (can('taskflow.cost_report.view')) {
     nav.push({ to: '/cost-usage', label: 'Cost report', icon: <TimesheetIcon /> });
   }
-  if (has('auth.user.list') || has('auth.user.create') || has('users:list') || has('users:invite')) {
+  if (can('auth.user.list', 'auth.user.create', 'users:list', 'users:invite')) {
     nav.push({ to: '/users', label: 'Users', icon: <UsersIcon /> });
   }
-  if (has('auth.role.manage_all') || has('roles:manage')) {
+  if (can('auth.role.manage_all', 'roles:manage')) {
     nav.push({ to: '/roles', label: 'Roles', icon: <RolesIcon /> });
   }
   if (
-    has('taskflow.customer_portal.org.manage') ||
-    has('taskflow.customer_portal.org.view') ||
-    has('customers:manage') ||
-    has('customers:view')
+    can(
+      'taskflow.customer_portal.org.manage',
+      'taskflow.customer_portal.org.view',
+      'customers:manage',
+      'customers:view'
+    )
   ) {
     nav.push({ to: '/admin/customer-orgs', label: 'Customer Orgs', icon: <UsersIcon /> });
   }
-  if (has('taskflow.customer_portal.request.approve') || has('customer-requests:approve')) {
+  if (can('taskflow.customer_portal.request.approve', 'customer-requests:approve')) {
     nav.push({ to: '/admin/customer-requests', label: 'Customer Requests', icon: <IssuesIcon /> });
   }
   if (
@@ -123,6 +136,25 @@ const PROJECT_NAV_ITEMS: { to: string; label: string; icon: ReactNode; permissio
   { to: '/gantt', label: 'Gantt', icon: <GanttIcon />, permission: 'issue.issue.read' },
   { to: '/roadmap', label: 'Roadmap', icon: <GanttIcon />, permission: 'roadmap.roadmap.read' },
   { to: '/versions', label: 'Versions', icon: <VersionsIcon />, permission: 'version.version.read' },
+  {
+    to: '/test-cases',
+    label: 'Test Cases',
+    icon: <BoardsIcon />,
+    permission: PROJECT_PERMISSIONS.TEST_MANAGEMENT.SUITE.READ,
+  },
+  {
+    to: '/test-plans',
+    label: 'Test Plans',
+    icon: <BoardsIcon />,
+    permission: PROJECT_PERMISSIONS.TEST_MANAGEMENT.SUITE.READ,
+  },
+  {
+    to: '/traceability',
+    label: 'Traceability',
+    icon: <GanttIcon />,
+    permission: PROJECT_PERMISSIONS.TEST_MANAGEMENT.SUITE.READ,
+  },
+  { to: '/defect-metrics', label: 'Defect Metrics', icon: <TimesheetIcon />, permission: 'issue.issue.read' },
   { to: '/timesheet', label: 'Timesheet', icon: <TimesheetIcon />, permission: 'issue.issue.read' },
   { to: '/settings', label: 'Settings', icon: <SettingsIcon />, permission: 'setting.project_setting.update' },
 ];
@@ -133,17 +165,13 @@ function projectNav(projectId: string, projectPermissions: string[], globalPermi
   const gp = globalPermissions;
   const can = (item: (typeof PROJECT_NAV_ITEMS)[number]) => {
     if (item.globalPerm) {
-      return gp.includes(item.permission) || gp.includes('taskflow.hr.designation.manage') || gp.includes('designations:manage');
+      return (
+        userHasPermission(gp, item.permission) ||
+        userHasPermission(gp, 'taskflow.hr.designation.manage') ||
+        userHasPermission(gp, 'designations:manage')
+      );
     }
-    return (
-      pp.includes(item.permission) ||
-      (item.permission === 'issue.issue.read' && (pp.includes('project:view') || pp.includes('issues:view'))) ||
-      (item.permission === 'board.board.read' && pp.includes('boards:view')) ||
-      (item.permission === 'sprint.sprint.read' && pp.includes('sprints:view')) ||
-      (item.permission === 'roadmap.roadmap.read' && pp.includes('roadmaps:view')) ||
-      (item.permission === 'version.version.read' && pp.includes('versions:view')) ||
-      (item.permission === 'setting.project_setting.update' && pp.includes('settings:manage'))
-    );
+    return userHasPermission(pp, item.permission) || userHasPermission(gp, item.permission);
   };
   const items = [
     { to: '/projects', label: 'Projects', icon: <ProjectsIcon />, end: true },
