@@ -777,6 +777,41 @@ export interface WatchFieldEmailParams {
   summary?: string;
 }
 
+export interface ReleaseDeployedEmailParams {
+  versionName: string;
+  environmentName: string;
+  projectName: string;
+  releasedAt: string;
+  issueCount: number;
+  actionLabel: 'Release' | 'Promotion';
+  versionsUrl: string;
+  releasedByName?: string;
+}
+
+export function renderReleaseDeployedEmail(params: ReleaseDeployedEmailParams): string {
+  const {
+    versionName,
+    environmentName,
+    projectName,
+    releasedAt,
+    issueCount,
+    actionLabel,
+    versionsUrl,
+    releasedByName,
+  } = params;
+  const inner = `${tfHeading(`${actionLabel}: ${versionName} → ${environmentName}`)}
+${tfActorLine('Released by', releasedByName)}
+${tfDetailTable([
+  { label: 'Project', value: projectName },
+  { label: 'Version', value: versionName },
+  { label: 'Environment', value: environmentName },
+  { label: 'Released at', value: releasedAt },
+  { label: 'Issues in release', value: String(issueCount) },
+])}
+${tfCta(versionsUrl, 'View release notes')}`;
+  return tfEmailWrap(inner, 'indigo');
+}
+
 export function renderWatchFieldEmail(params: WatchFieldEmailParams): string {
   const { issueKey, issueTitle, projectName, changes, actorName, issueUrl, summary } = params;
   const changeRows =

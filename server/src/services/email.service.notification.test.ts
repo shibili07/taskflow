@@ -7,6 +7,7 @@ import {
   renderWatchCommentEmail,
   renderWatchFieldEmail,
   renderWatchStatusEmail,
+  renderReleaseDeployedEmail,
 } from './email.service';
 
 describe('notification email templates', () => {
@@ -89,6 +90,22 @@ describe('notification email templates', () => {
     });
     expect(html).toContain('priority');
     expect(html).toContain('Low → High');
+  });
+
+  it('renderReleaseDeployedEmail includes version, environment, and CTA', () => {
+    const html = renderReleaseDeployedEmail({
+      versionName: '2.0.0',
+      environmentName: 'Production',
+      projectName: 'Demo',
+      releasedAt: 'May 28, 2026, 3:00 PM',
+      issueCount: 12,
+      actionLabel: 'Release',
+      versionsUrl: 'https://app.example.com/projects/p1/versions',
+    });
+    expect(html).toContain('2.0.0');
+    expect(html).toContain('Production');
+    expect(html).toContain('View release notes');
+    expect(html).toContain('12');
   });
 
   it('renderProjectInviteEmail includes project and inbox CTA', () => {

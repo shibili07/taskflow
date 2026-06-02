@@ -8,9 +8,9 @@ import {
   sendWhatsappNotification,
   type ThirdPartyProvider,
 } from '../../services/notifications/thirdPartyNotifier';
-import type { NotificationEventKey } from '../../shared/constants/notificationCatalog';
+import type { NotificationEventKey, NotificationMethod } from '../../shared/constants/notificationCatalog';
 import { createNotification } from './notifications.service';
-import { shouldSend } from './notificationPreference.service';
+import { getAvailableMethods, shouldSend } from './notificationPreference.service';
 import { User } from '../auth/user.model';
 
 export type NotifyUserParams = {
@@ -24,12 +24,28 @@ export type NotifyUserParams = {
   html?: string;
   /** When true, skips the email channel (e.g. a dedicated transactional email was already sent). */
   skipEmail?: boolean;
+  /**
+   * When set, deliver on these channels if the transport is enabled, ignoring per-user
+   * notification preferences (e.g. project release rules configured by an admin).
+   */
+  channelOverrides?: NotificationMethod[];
 };
 
-export async function notifyUser(params: NotifyUserParams): Promise<void> {
-  const { userId, eventKey, title, body = '', link, metadata, html, skipEmail } = params;
+async function deliverOnChannel(
+  userId: string,
+  eventKey: NotificationEventKey,
+  method: NotificationMethod,
+  channelOverrides?: NotificationMethod[]
+): Promise<boolean> {
+  if (!getAvailableMethods()[method]?.enabled) return false;
+  if (channelOverrides?.includes(method)) return true;
+  return shouldSend(userId, eventKey, method);
+}
 
-  if (await shouldSend(userId, eventKey, 'in_app')) {
+export async function notifyUser(params: NotifyUserParams): Promise<void> {
+  const { userId, eventKey, title, body = '', link, metadata, html, skipEmail, channelOverrides } = params;
+
+  if (await deliverOnChannel(userId, eventKey, 'in_app', channelOverrides)) {
     await createNotification({
       userId,
       type: eventKey,
@@ -40,13 +56,13 @@ export async function notifyUser(params: NotifyUserParams): Promise<void> {
     });
   }
 
-  if (await shouldSend(userId, eventKey, 'push')) {
+  if (await deliverOnChannel(userId, eventKey, 'push', channelOverrides)) {
     const payload = { title, body, url: link, data: { eventKey, ...(metadata ?? {}) } };
     sendPushToUser(userId, payload).catch((err) => console.error('Push failed:', err));
     notifyPush(userId, payload);
   }
 
-  if (!skipEmail && (await shouldSend(userId, eventKey, 'email'))) {
+  if (!skipEmail && (await deliverOnChannel(userId, eventKey, 'email', channelOverrides))) {
     const user = await User.findById(userId).select('email').lean();
     const to = (user as { email?: string } | null)?.email;
     if (to) {
@@ -56,7 +72,7 @@ export async function notifyUser(params: NotifyUserParams): Promise<void> {
     }
   }
 
-  if (await shouldSend(userId, eventKey, 'sms')) {
+  if (await deliverOnChannel(userId, eventKey, 'sms', channelOverrides)) {
     const smsToFromMeta = typeof metadata?.smsTo === 'string' ? metadata.smsTo : '';
     const smsTo = smsToFromMeta || env.smsDefaultTo;
     if (smsTo) {
@@ -65,7 +81,7 @@ export async function notifyUser(params: NotifyUserParams): Promise<void> {
       );
     }
   }
-  if (await shouldSend(userId, eventKey, 'whatsapp')) {
+  if (await deliverOnChannel(userId, eventKey, 'whatsapp', channelOverrides)) {
     const whatsappToFromMeta = typeof metadata?.whatsappTo === 'string' ? metadata.whatsappTo : '';
     const whatsappTo = whatsappToFromMeta || env.whatsappDefaultTo;
     if (whatsappTo) {
@@ -77,7 +93,7 @@ export async function notifyUser(params: NotifyUserParams): Promise<void> {
 
   const providerMethods: ThirdPartyProvider[] = ['slack', 'teams', 'telegram', 'discord'];
   for (const provider of providerMethods) {
-    if (await shouldSend(userId, eventKey, provider)) {
+    if (await deliverOnChannel(userId, eventKey, provider, channelOverrides)) {
       sendThirdPartyNotification(provider, {
         title,
         body,

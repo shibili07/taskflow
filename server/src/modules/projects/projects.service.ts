@@ -8,7 +8,8 @@ import { ProjectMember } from './projectMember.model';
 import { Issue } from '../issues/issue.model';
 import { User } from '../auth/user.model';
 import { ApiError } from '../../utils/ApiError';
-import * as inboxService from '../inbox/inbox.service';
+import * as releaseNotificationService from './releaseNotification.service';
+import type { IProjectReleaseRule } from './project.model';
 import * as projectTemplatesService from '../projectTemplates/projectTemplates.service';
 import * as projectInvitationsService from './projectInvitations.service';
 import * as projectDesignationService from './projectDesignation.service';
@@ -513,22 +514,21 @@ export async function releaseVersionToEnvironment(
   const updatedVersion = versionsList?.find((v) => v.id === versionId) ?? version;
   const issueCount = await Issue.countDocuments({ project: projectId, fixVersion: versionId });
 
-  // Inbox: release notes (major info) - notify configured users or all project members
-  const ruleWithNotify = rule as { notifyUserIds?: string[] };
-  let userIdsToNotify: string[] = Array.isArray(ruleWithNotify.notifyUserIds)
-    ? ruleWithNotify.notifyUserIds
-    : await ProjectMember.find({ project: projectId }).distinct('user').then((ids) => ids.map((id) => String(id)));
-  userIdsToNotify = [...new Set(userIdsToNotify)];
   const releaseTitle = `Release: ${version.name} → ${env.name}`;
-  for (const uid of userIdsToNotify) {
-    inboxService.createMessage({
-      toUser: uid,
-      type: 'release_notes',
-      title: releaseTitle,
-      body: releaseNotes,
-      meta: { projectId, versionId, versionName: version.name, environmentId, environmentName: env.name, issueCount: issues.length },
-    }).catch((err) => console.error('Inbox release notification failed:', err));
-  }
+  releaseNotificationService
+    .dispatchReleaseNotifications({
+      projectId,
+      rule: rule as IProjectReleaseRule,
+      releaseTitle,
+      releaseNotesMarkdown: releaseNotes,
+      versionName: version.name,
+      environmentName: env.name,
+      projectName,
+      releasedAtFormatted,
+      issueCount: issues.length,
+      promoteRelease,
+    })
+    .catch((err) => console.error('Release notifications failed:', err));
 
   return {
     releaseNotes,
