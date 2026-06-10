@@ -413,6 +413,20 @@ export default function Profile() {
         </Link>
       </div>
 
+      {/* API tokens */}
+      <div className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)] p-6">
+        <h2 className="text-base font-medium text-[color:var(--text-primary)] mb-2">API tokens</h2>
+        <p className="text-sm text-[color:var(--text-muted)] mb-4">
+          Generate personal access tokens to connect TaskFlow to Claude and other tools via MCP.
+        </p>
+        <Link
+          to="/profile/api-tokens"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[color:var(--accent)] text-white text-sm font-medium hover:opacity-90"
+        >
+          Manage API tokens
+        </Link>
+      </div>
+
       {/* Profile details grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)] p-6">

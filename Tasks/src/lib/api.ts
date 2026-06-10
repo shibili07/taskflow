@@ -180,6 +180,33 @@ export const authApi = {
     api.post<AuthData>('/auth/reset-password', { token, newPassword }),
 };
 
+export interface PersonalAccessTokenSummary {
+  _id: string;
+  name: string;
+  tokenPrefix: string;
+  lastUsedAt: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
+export interface CreatedPersonalAccessToken {
+  id: string;
+  name: string;
+  token: string;
+  tokenPrefix: string;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
+export const personalAccessTokensApi = {
+  list: (token: string) =>
+    api.get<PersonalAccessTokenSummary[]>('/auth/personal-access-tokens', token),
+  create: (body: { name: string; expiresInDays?: number }, token: string) =>
+    api.post<CreatedPersonalAccessToken>('/auth/personal-access-tokens', body, token),
+  revoke: (id: string, token: string) =>
+    api.delete(`/auth/personal-access-tokens/${id}`, token),
+};
+
 export interface TaskflowOrganizationDetail {
   organization: {
     _id: string;

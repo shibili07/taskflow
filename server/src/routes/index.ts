@@ -31,6 +31,7 @@ import { customerProjectMappingRoutes } from '../modules/customer-portal/custome
 import { customerRequestRoutes } from '../modules/customer-portal/customer-request/customerRequest.routes';
 import { customerAuthRoutes } from '../modules/customer-portal/customer-auth/customerAuth.routes';
 import { organizationsRoutes } from '../modules/organizations/organizations.routes';
+import { personalAccessTokensRoutes } from '../modules/personalAccessTokens/personalAccessTokens.routes';
 
 const router = Router();
 
@@ -45,6 +46,7 @@ router.use('/auth', authRoutes);
 router.use('/organizations', organizationsRoutes);
 router.use('/auth/users', usersRoutes);
 router.use('/auth/roles', rolesRoutes);
+router.use('/auth/personal-access-tokens', personalAccessTokensRoutes);
 router.get('/timesheet/details', authMiddleware, ...timesheetDetailsHandler);
 router.get('/timesheet/export', authMiddleware, ...timesheetExportHandler);
 router.get('/timesheet', authMiddleware, ...globalTimesheetHandler);

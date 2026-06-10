@@ -19,6 +19,7 @@ import ProjectTemplates from './pages/ProjectTemplates';
 import Inbox from './pages/Inbox';
 import Profile from './pages/Profile';
 import NotificationPreferences from './pages/NotificationPreferences';
+import ApiTokens from './pages/ApiTokens';
 import Issues from './pages/Issues';
 import GlobalIssues from './pages/GlobalIssues';
 import Workload from './pages/Workload';
@@ -105,6 +106,7 @@ function AppRoutes() {
         <Route path="/inbox" element={<Inbox />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/profile/notifications" element={<NotificationPreferences />} />
+        <Route path="/profile/api-tokens" element={<ApiTokens />} />
         <Route path="/settings/workspace" element={<TaskflowWorkspaceSettings />} />
         <Route path="/issues" element={<GlobalIssues />} />
         <Route path="/workload" element={<Workload />} />

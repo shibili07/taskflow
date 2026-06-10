@@ -10,6 +10,103 @@ import { resolveEffectiveGlobalPermissions } from '../modules/auth/effectivePerm
 import { mergeTaskflowPermissionFloor } from '../modules/auth/permissionMerge';
 import { mapLegacyCustomerPermissions } from '../shared/constants/legacyPermissionMap';
 import { OrganizationMember } from '../modules/organizations/organizationMember.model';
+import { PersonalAccessToken } from '../modules/personalAccessTokens/personalAccessToken.model';
+import { PAT_PREFIX, hashTokenValue } from '../modules/personalAccessTokens/personalAccessToken.service';
+
+/** Loads a TaskFlow user, sets req.user / req.activeOrganizationId. Shared by JWT and PAT auth. */
+async function authenticateTaskflowUser(
+  req: Request,
+  userId: string,
+  activeOrganizationIdHint?: string
+): Promise<void> {
+  const user = await User.findById(userId).populate('roleId', 'permissions').lean();
+  if (!user) {
+    throw new ApiError(401, 'User not found');
+  }
+  const u = user as { enabled?: boolean };
+  if (u.enabled === false) {
+    throw new ApiError(401, 'Account is disabled');
+  }
+  const role = user.roleId as { _id?: { toString(): string }; permissions?: string[] } | null | undefined;
+  const overrides = (user as { permissionOverrides?: { granted?: string[]; revoked?: string[] } })
+    .permissionOverrides;
+  const permissions = mergeTaskflowPermissionFloor(
+    resolveEffectiveGlobalPermissions({
+      rolePermissions: role?.permissions,
+      role: user.role,
+      mustChangePassword: user.mustChangePassword ?? false,
+      permissionOverrides: overrides,
+    })
+  );
+  const roleIdStr =
+    user.roleId && typeof user.roleId === 'object' && '_id' in user.roleId
+      ? (user.roleId as { _id: { toString(): string } })._id.toString()
+      : user.roleId
+        ? String(user.roleId)
+        : undefined;
+  req.user = {
+    id: user._id.toString(),
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    roleId: roleIdStr,
+    permissions,
+    mustChangePassword: user.mustChangePassword ?? false,
+  } as AuthPayload;
+
+  const userOid = user._id;
+  const headerOrg = (req.headers['x-organization-id'] as string | undefined)?.trim();
+  let activeOrganizationId: string | undefined;
+
+  if (headerOrg && mongoose.Types.ObjectId.isValid(headerOrg)) {
+    const ok = await OrganizationMember.exists({
+      organization: headerOrg,
+      user: userOid,
+      status: 'active',
+    });
+    if (ok) activeOrganizationId = headerOrg;
+  }
+  if (!activeOrganizationId && activeOrganizationIdHint && mongoose.Types.ObjectId.isValid(activeOrganizationIdHint)) {
+    const ok = await OrganizationMember.exists({
+      organization: activeOrganizationIdHint,
+      user: userOid,
+      status: 'active',
+    });
+    if (ok) activeOrganizationId = activeOrganizationIdHint;
+  }
+  if (!activeOrganizationId) {
+    const m = await OrganizationMember.findOne({ user: userOid, status: 'active' })
+      .sort({ createdAt: 1 })
+      .select('organization')
+      .lean();
+    if (m?.organization) activeOrganizationId = String(m.organization);
+  }
+  req.activeOrganizationId = activeOrganizationId;
+}
+
+async function authenticateWithPersonalAccessToken(req: Request, token: string, next: NextFunction): Promise<void> {
+  const tokenHash = hashTokenValue(token);
+  const pat = await PersonalAccessToken.findOne({ tokenHash });
+  if (!pat) {
+    next(new ApiError(401, 'Invalid or revoked token'));
+    return;
+  }
+  if (pat.expiresAt && pat.expiresAt.getTime() < Date.now()) {
+    next(new ApiError(401, 'Token has expired'));
+    return;
+  }
+
+  try {
+    await authenticateTaskflowUser(req, pat.user.toString());
+  } catch (err) {
+    next(err instanceof ApiError ? err : new ApiError(401, 'Invalid or expired token'));
+    return;
+  }
+
+  PersonalAccessToken.updateOne({ _id: pat._id }, { lastUsedAt: new Date() }).catch(() => undefined);
+
+  next();
+}
 
 export async function authMiddleware(
   req: Request,
@@ -21,6 +118,11 @@ export async function authMiddleware(
 
   if (!token) {
     next(new ApiError(401, 'Authentication required'));
+    return;
+  }
+
+  if (token.startsWith(PAT_PREFIX)) {
+    await authenticateWithPersonalAccessToken(req, token, next);
     return;
   }
 
@@ -88,74 +190,14 @@ export async function authMiddleware(
       return;
     }
 
-    const user = await User.findById(decoded.sub).populate('roleId', 'permissions').lean();
-    if (!user) {
-      next(new ApiError(401, 'User not found'));
-      return;
-    }
-    const u = user as { enabled?: boolean };
-    if (u.enabled === false) {
-      next(new ApiError(401, 'Account is disabled'));
-      return;
-    }
-    const role = user.roleId as { _id?: { toString(): string }; permissions?: string[] } | null | undefined;
-    const overrides = (user as { permissionOverrides?: { granted?: string[]; revoked?: string[] } })
-      .permissionOverrides;
-    const permissions = mergeTaskflowPermissionFloor(
-      resolveEffectiveGlobalPermissions({
-        rolePermissions: role?.permissions,
-        role: user.role,
-        mustChangePassword: user.mustChangePassword ?? false,
-        permissionOverrides: overrides,
-      })
-    );
-    const roleIdStr =
-      user.roleId && typeof user.roleId === 'object' && '_id' in user.roleId
-        ? (user.roleId as { _id: { toString(): string } })._id.toString()
-        : user.roleId
-          ? String(user.roleId)
-          : undefined;
-    req.user = {
-      id: user._id.toString(),
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      roleId: roleIdStr,
-      permissions,
-      mustChangePassword: user.mustChangePassword ?? false,
-    } as AuthPayload;
-
-    const userOid = user._id;
-    const headerOrg = (req.headers['x-organization-id'] as string | undefined)?.trim();
-    let activeOrganizationId: string | undefined;
-
-    if (headerOrg && mongoose.Types.ObjectId.isValid(headerOrg)) {
-      const ok = await OrganizationMember.exists({
-        organization: headerOrg,
-        user: userOid,
-        status: 'active',
-      });
-      if (ok) activeOrganizationId = headerOrg;
-    }
-    if (!activeOrganizationId && decoded.activeOrganizationId && mongoose.Types.ObjectId.isValid(decoded.activeOrganizationId)) {
-      const ok = await OrganizationMember.exists({
-        organization: decoded.activeOrganizationId,
-        user: userOid,
-        status: 'active',
-      });
-      if (ok) activeOrganizationId = decoded.activeOrganizationId;
-    }
-    if (!activeOrganizationId) {
-      const m = await OrganizationMember.findOne({ user: userOid, status: 'active' })
-        .sort({ createdAt: 1 })
-        .select('organization')
-        .lean();
-      if (m?.organization) activeOrganizationId = String(m.organization);
-    }
-    req.activeOrganizationId = activeOrganizationId;
+    await authenticateTaskflowUser(req, decoded.sub, decoded.activeOrganizationId);
 
     next();
-  } catch {
+  } catch (err) {
+    if (err instanceof ApiError) {
+      next(err);
+      return;
+    }
     next(new ApiError(401, 'Invalid or expired token'));
   }
 }
